@@ -343,7 +343,8 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
     };
   }
   function encoderConfig(kind, codec, w, h, fps, bitrate, hw) {
-    var c = { codec: codec, width: w, height: h, bitrate: bitrate, bitrateMode: 'variable', framerate: Math.round(fps), latencyMode: 'quality', hardwareAcceleration: hw };
+    var c = { codec: codec, width: w, height: h, bitrate: bitrate, bitrateMode: 'variable', framerate: Math.round(fps), latencyMode: 'quality' };
+    if (hw) c.hardwareAcceleration = hw;
     if (kind === 'avc') c.avc = { format: 'avc' };
     if (kind === 'hevc') c.hevc = { format: 'hevc' };
     return c;
@@ -353,9 +354,10 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
   }
   // Picks the best encoder for "smallest file" and for "plays everywhere".
   // Software AV1 ranks above H.264: it shrinks already-compressed files that H.264 cannot, at several times real time.
+  // The last two entries leave out hardwareAcceleration for older Chrome, which rejects these values.
   function pickEncoders(w, h, fps) {
     var c = encoderCandidates(w, h, fps), found = {};
-    var order = [['hevc', 'prefer-hardware'], ['av1', 'prefer-hardware'], ['avc', 'prefer-hardware'], ['av1', 'no-preference'], ['avc', 'no-preference']];
+    var order = [['hevc', 'prefer-hardware'], ['av1', 'prefer-hardware'], ['avc', 'prefer-hardware'], ['av1', 'no-preference'], ['avc', 'no-preference'], ['av1', null], ['avc', null]];
     return order.reduce(function (p, o) {
       return p.then(function () {
         if (found[o[0]]) return;
@@ -645,7 +647,10 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
     });
     decoder.configure(F.decoderConfig);
 
+    // Chrome before 106 has no 'dequeue' events on the codecs, so it waits on a short timer instead.
+    var hasDequeue = typeof decoder.addEventListener === 'function' && typeof encoder.addEventListener === 'function';
     function waitQueues() {
+      if (!hasDequeue) return new Promise(function (resolve) { setTimeout(resolve, 4); });
       return new Promise(function (resolve) {
         var done = false;
         function go() {
