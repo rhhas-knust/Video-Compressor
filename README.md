@@ -51,5 +51,8 @@ High / Balanced / Smallest and save the result. Nothing is uploaded.
 - **Real-time mode** (other formats, e.g. MKV): plays the video through once
   with MediaRecorder, so it takes as long as the video.
 
+Hosted with GitHub Pages (Settings → Pages → Deploy from branch `main`, `/ (root)`):
+https://rhhas-knust.github.io/Video-Compressor/ redirects to the app in `web/`.
+
 `web/vendor/` holds the two libraries it uses (mp4box.js, mp4-muxer); serve the
 `web/` folder over HTTPS or localhost, since WebCodecs needs a secure context.
