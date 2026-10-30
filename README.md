@@ -39,7 +39,17 @@ pip install pytest && python3 -m pytest tests
 ```
 
 ## Web version (no install, works on Chromebook)
-`web/index.html` is a single-file browser app. Open it in Chrome, pick a video,
-choose High / Balanced / Smallest and save the result. Nothing is uploaded; the
-video is re-encoded in the tab using the browser's built-in encoder. It runs in
-real time (a 5-minute video takes about 5 minutes) and the tab must stay visible.
+`web/index.html` is a browser app (open it in Chrome). Pick a video, choose
+High / Balanced / Smallest and save the result. Nothing is uploaded.
+
+- **Fast mode** (MP4/MOV): reads the file directly with WebCodecs and re-encodes
+  the picture with the device's encoder, usually several times faster than
+  playback. Audio is copied unchanged. "Smallest file" uses H.265 or AV1 when
+  available; AV1 shrinks already-compressed videos that H.264 cannot.
+  "Plays everywhere" uses H.264. If the output is on course to be no smaller
+  than the original, it stops early and says so.
+- **Real-time mode** (other formats, e.g. MKV): plays the video through once
+  with MediaRecorder, so it takes as long as the video.
+
+`web/vendor/` holds the two libraries it uses (mp4box.js, mp4-muxer); serve the
+`web/` folder over HTTPS or localhost, since WebCodecs needs a secure context.
