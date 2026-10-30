@@ -6,7 +6,8 @@
 <title>Video Compressor</title>
 <meta http-equiv="refresh" content="0; url=web/">
 <link rel="canonical" href="web/">
-<script>location.replace('web/' + location.search + location.hash);</script>
+<!-- The query string makes Chrome fetch the app fresh instead of using a cached copy. -->
+<script>location.replace('web/?t=' + Date.now() + location.hash);</script>
 </head>
 <body>
 <p><a href="web/">Open Video Compressor</a></p>
