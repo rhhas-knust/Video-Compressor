@@ -1,4 +1,5 @@
 <title>Video Compressor</title>
+<meta charset="utf-8">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
@@ -109,7 +110,11 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
 .foot { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; }
 @media (max-width: 520px) { .quality { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .bar > i, .drop { transition: none; } }
+.mode { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.chip { font: 500 12px var(--font-mono); letter-spacing: .04em; padding: 3px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+.chip.slow { background: var(--warn-soft); color: var(--warn); }
 </style>
+
 
 <main>
   <header>
@@ -120,9 +125,9 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
   <section class="step" aria-labelledby="s1">
     <div class="label" id="s1">Step 1 · Choose a video</div>
     <label class="drop" id="drop">
-      <input type="file" id="file" accept="video/*">
+      <input type="file" id="file" accept="video/*,.mkv,.mov">
       <strong>Select a video file</strong>
-      <span>or drop one here. MP4, MOV, WebM and most phone recordings work.</span>
+      <span>or drop one here. MP4 and MOV files compress fastest.</span>
     </label>
     <div class="panel" id="info" hidden>
       <div class="fname" id="fname"></div>
@@ -132,8 +137,10 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
         <div><dt>Resolution</dt><dd id="i-res"></dd></div>
         <div><dt>Frame rate</dt><dd id="i-fps"></dd></div>
       </dl>
+      <div class="mode"><span class="chip" id="mode-chip"></span><span id="mode-text"></span></div>
     </div>
     <div class="notice" id="fileerr" hidden></div>
+    <p class="hint" id="reading" hidden>Reading the file…</p>
   </section>
 
   <section class="step" id="tune" aria-labelledby="s2" hidden>
@@ -151,8 +158,13 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
         <option value="720">Limit to 720p</option>
         <option value="480">Limit to 480p</option>
       </select>
+      <label for="fmt" id="fmt-label">Format</label>
+      <select id="fmt">
+        <option value="auto">Smallest file</option>
+        <option value="h264">Plays everywhere (H.264)</option>
+      </select>
     </div>
-    <p class="hint">Estimated sizes are approximate. Videos that are already small are never re-encoded larger than the original rate.</p>
+    <p class="hint">Estimated sizes are approximate. The quality is never pushed above what the original file already has, so an already-small video shrinks less.</p>
   </section>
 
   <section class="step" id="run" aria-labelledby="s3" hidden>
@@ -163,9 +175,9 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
     </div>
     <div class="panel" id="prog" hidden>
       <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="barwrap"><i id="fill"></i></div>
-      <div class="stats"><span id="pct">0%</span><span id="eta"></span></div>
-      <p class="hint" style="margin-top:10px">Compression plays the video through once, so it takes about as long as the video itself. Keep this tab open and visible.</p>
-      <div class="notice" id="hidden-warn" hidden style="margin-top:10px">This tab is in the background. Switch back to it so no frames are skipped.</div>
+      <div class="stats"><span id="pct">0%</span><span id="speed"></span><span id="eta"></span></div>
+      <p class="hint" id="prog-hint" style="margin-top:10px"></p>
+      <div class="notice" id="hidden-warn" hidden style="margin-top:10px">This tab is in the background. Switch back to it to keep compression at full speed.</div>
     </div>
   </section>
 
@@ -176,8 +188,9 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
         <span class="big" id="r-pct"></span>
         <span class="sizes"><s id="r-old"></s> → <b id="r-new"></b></span>
       </div>
+      <p class="hint" id="r-time" style="margin-top:6px"></p>
       <div class="notice" id="r-warn" hidden style="margin-top:12px"></div>
-      <video id="r-video" controls playsinline></video>
+      <video id="r-video" controls playsinline preload="metadata"></video>
       <div class="actions" style="margin-top:12px">
         <button id="save">Save compressed video</button>
         <button id="again" class="secondary">Try other settings</button>
@@ -186,20 +199,27 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
     </div>
   </section>
 
-  <p class="foot">Compression uses your device's built-in video encoder. Quality is set by bitrate per pixel, scaled to the resolution and frame rate of your video. Audio is re-encoded at 128 kbps.</p>
+  <p class="foot">Fast mode reads MP4 and MOV files directly and re-encodes the picture with your device's video encoder, usually many times faster than playback. The audio is copied unchanged. Other formats fall back to real-time mode, which plays the video through once and re-encodes the audio at 128 kbps.</p>
 </main>
 
+<script src="vendor/mp4box.all.min.js"></script>
+<script src="vendor/mp4-muxer.js"></script>
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
-  // bits per pixel per frame, by preset
+  // bits per pixel per frame for H.264, by preset
   var QUALITY = { high: 0.10, balanced: 0.06, small: 0.035 };
+  // share of the original video bitrate each preset may use, before codec gains
+  var CAP = { high: 1.0, balanced: 0.85, small: 0.65 };
+  // bitrate needed for the same quality, relative to H.264
+  var EFF = { avc: 1, hevc: 0.7, av1: 0.65, vp9: 0.75 };
+  var CODEC_NAME = { avc: 'H.264', hevc: 'H.265', av1: 'AV1', vp9: 'VP9' };
   var AUDIO_BPS = 128000;
-  var FORMATS = [
+  var RECORDER_FORMATS = [
     'video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4',
     'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'
   ];
-  var S = { file: null, url: null, meta: null, job: null, resultBlob: null, resultExt: 'mp4', resultUrl: null };
+  var S = { file: null, url: null, meta: null, fast: null, encoders: null, job: null, resultBlob: null, resultExt: 'mp4', resultUrl: null };
   var downloads = null;
   try {
     if (window.claude && window.claude.use) window.claude.use('downloads').then(function (d) { downloads = d; }, function () {});
@@ -212,37 +232,197 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
   }
   function fmtTime(s) {
     s = Math.max(0, Math.round(s));
-    var m = Math.floor(s / 60), r = s % 60;
-    return m + ':' + (r < 10 ? '0' : '') + r;
+    var h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, r = s % 60;
+    var mm = (h && m < 10 ? '0' : '') + m, rr = (r < 10 ? '0' : '') + r;
+    return (h ? h + ':' : '') + mm + ':' + rr;
   }
   function even(n) { return Math.max(2, Math.round(n / 2) * 2); }
-  function pickFormat() {
+  function recorderFormat() {
     if (!window.MediaRecorder) return null;
-    for (var i = 0; i < FORMATS.length; i++) if (MediaRecorder.isTypeSupported(FORMATS[i])) return FORMATS[i];
+    for (var i = 0; i < RECORDER_FORMATS.length; i++) if (MediaRecorder.isTypeSupported(RECORDER_FORMATS[i])) return RECORDER_FORMATS[i];
     return null;
   }
+  function codecKind(codec) {
+    codec = (codec || '').toLowerCase();
+    if (/^(avc|h264)/.test(codec)) return 'avc';
+    if (/^(hvc|hev|h265)/.test(codec)) return 'hevc';
+    if (/^av01/.test(codec)) return 'av1';
+    if (/^vp0?9/.test(codec)) return 'vp9';
+    return 'avc';
+  }
+
+  /* ---------- reading MP4/MOV ---------- */
+
+  function parseMp4(file) {
+    return new Promise(function (resolve) {
+      if (!window.MP4Box) return resolve(null);
+      var iso = MP4Box.createFile(false), info = null, failed = false, offset = 0, CH = 4 * 1048576;
+      iso.onReady = function (i) { info = i; };
+      iso.onError = function () { failed = true; };
+      (function next() {
+        if (info) return resolve({ iso: iso, info: info });
+        if (failed || offset >= file.size) return resolve(null);
+        file.slice(offset, offset + CH).arrayBuffer().then(function (buf) {
+          buf.fileStart = offset;
+          var want;
+          try { want = iso.appendBuffer(buf); } catch (e) { failed = true; }
+          offset = (typeof want === 'number' && want > offset) ? want : offset + buf.byteLength;
+          next();
+        }, function () { resolve(null); });
+      })();
+    });
+  }
+  function sampleEntry(trak) { return trak.mdia.minf.stbl.stsd.entries[0]; }
+  function videoDescription(trak) {
+    var e = sampleEntry(trak), box = e && (e.avcC || e.hvcC || e.vpcC || e.av1C);
+    if (!box) return undefined;
+    var ds = new DataStream(undefined, 0, DataStream.BIG_ENDIAN);
+    box.write(ds);
+    return new Uint8Array(ds.buffer, 8);
+  }
+  function aacDescription(trak) {
+    try { return sampleEntry(trak).esds.esd.descs[0].descs[0].data; } catch (e) { return undefined; }
+  }
+  // media-time shift from the edit list, so playback timing matches the original player's
+  function editShift(trak, movieTimescale) {
+    var elst = trak.edts && trak.edts.elst;
+    if (!elst || !elst.entries || !elst.entries.length) return 0;
+    var delay = 0;
+    for (var i = 0; i < elst.entries.length; i++) {
+      var en = elst.entries[i];
+      if (en.media_time === -1) delay += en.segment_duration / movieTimescale * trak.mdia.mdhd.timescale;
+      else return en.media_time - delay;
+    }
+    return 0;
+  }
+  function rotationOf(track) {
+    var m = track.matrix;
+    if (!m) return 0;
+    var deg = Math.round(Math.atan2(m[1], m[0]) * 180 / Math.PI / 90) * 90;
+    return ((deg % 360) + 360) % 360;
+  }
+
+  // Inspect the file for fast mode. Returns null when only real-time mode can handle it.
+  function analyzeFast(file) {
+    if (!window.VideoDecoder || !window.VideoEncoder || !window.Mp4Muxer || !window.MP4Box) return Promise.resolve(null);
+    return parseMp4(file).then(function (p) {
+      if (!p || !p.info.videoTracks.length) return null;
+      var vt = p.info.videoTracks[0], vtrak = p.iso.getTrackById(vt.id);
+      var at = p.info.audioTracks[0], atrak = at && p.iso.getTrackById(at.id);
+      var vs = vtrak.samples;
+      if (!vs || !vs.length) return null;
+      var dur = p.info.duration / p.info.timescale;
+      var vbytes = 0;
+      for (var i = 0; i < vs.length; i++) vbytes += vs[i].size;
+      var abytes = 0;
+      if (atrak) for (var j = 0; j < atrak.samples.length; j++) abytes += atrak.samples[j].size;
+      var fast = {
+        iso: p.iso, vt: vt, vtrak: vtrak, at: null, atrak: null, dur: dur,
+        w: vt.video.width, h: vt.video.height, fps: vs.length / (vt.duration / vt.timescale || dur),
+        srcKind: codecKind(vt.codec), srcVideoBps: vbytes * 8 / dur, audioBytes: 0,
+        rotation: rotationOf(vt), movieTimescale: p.info.timescale,
+        decoderConfig: { codec: vt.codec, codedWidth: vt.video.width, codedHeight: vt.video.height, description: videoDescription(vtrak) }
+      };
+      if (at) {
+        if (!/^mp4a\.40/.test(at.codec)) return { unsupportedAudio: at.codec };
+        fast.at = at; fast.atrak = atrak; fast.audioBytes = abytes;
+        fast.audioConfig = { codec: at.codec, sampleRate: at.audio.sample_rate, numberOfChannels: at.audio.channel_count, description: aacDescription(atrak) };
+      }
+      return VideoDecoder.isConfigSupported(fast.decoderConfig).then(function (r) { return r.supported ? fast : null; }, function () { return null; });
+    }).catch(function () { return null; });
+  }
+
+  /* ---------- choosing an encoder ---------- */
+
+  function encoderCandidates(w, h, fps) {
+    var big = w * h > 1920 * 1088, fast = w * h * fps > 1920 * 1088 * 31;
+    return {
+      hevc: big ? 'hvc1.1.6.L153.90' : 'hvc1.1.6.L123.90',
+      av1: big ? 'av01.0.12M.08' : 'av01.0.08M.08',
+      avc: big || fast ? 'avc1.640033' : 'avc1.640028'
+    };
+  }
+  function encoderConfig(kind, codec, w, h, fps, bitrate, hw) {
+    var c = { codec: codec, width: w, height: h, bitrate: bitrate, bitrateMode: 'variable', framerate: Math.round(fps), latencyMode: 'quality', hardwareAcceleration: hw };
+    if (kind === 'avc') c.avc = { format: 'avc' };
+    if (kind === 'hevc') c.hevc = { format: 'hevc' };
+    return c;
+  }
+  function trySupported(cfg) {
+    return VideoEncoder.isConfigSupported(cfg).then(function (r) { return !!r.supported; }, function () { return false; });
+  }
+  // Picks the best encoder for "smallest file" and for "plays everywhere".
+  // Software AV1 ranks above H.264: it shrinks already-compressed files that H.264 cannot, at several times real time.
+  function pickEncoders(w, h, fps) {
+    var c = encoderCandidates(w, h, fps), found = {};
+    var order = [['hevc', 'prefer-hardware'], ['av1', 'prefer-hardware'], ['avc', 'prefer-hardware'], ['av1', 'no-preference'], ['avc', 'no-preference']];
+    return order.reduce(function (p, o) {
+      return p.then(function () {
+        if (found[o[0]]) return;
+        return trySupported(encoderConfig(o[0], c[o[0]], w, h, fps, 2e6, o[1])).then(function (ok) {
+          if (ok) found[o[0]] = { kind: o[0], codec: c[o[0]], hw: o[1], hardware: o[1] === 'prefer-hardware' };
+        });
+      });
+    }, Promise.resolve()).then(function () {
+      var avc = found.avc || null;
+      return { auto: found.hevc || found.av1 || avc, h264: avc };
+    });
+  }
+  function currentEncoder() {
+    if (!S.fast || !S.encoders) return null;
+    return ($('fmt').value === 'h264' ? S.encoders.h264 : S.encoders.auto) || S.encoders.auto || S.encoders.h264;
+  }
+
+  /* ---------- sizes and bitrates ---------- */
 
   function targetSize(maxH) {
     var m = S.meta, w = m.w, h = m.h;
     if (maxH && h > maxH) { w = even(m.w * maxH / m.h); h = even(maxH); } else { w = even(w); h = even(h); }
     return { w: w, h: h };
   }
+  function outKind() {
+    if (S.fast) { var e = currentEncoder(); return e ? e.kind : 'avc'; }
+    var f = recorderFormat() || '';
+    return f.indexOf('vp9') > -1 ? 'vp9' : 'avc';
+  }
   function bitrateFor(preset, dims) {
-    var m = S.meta, fmt = pickFormat() || '';
-    var v = QUALITY[preset] * dims.w * dims.h * m.fps;
-    if (fmt.indexOf('webm') === 0 && fmt.indexOf('vp9') > -1) v *= 0.8;
-    var srcVideo = Math.max(0, S.file.size * 8 / m.duration - AUDIO_BPS);
-    if (srcVideo > 0) v = Math.min(v, srcVideo * 0.9);
-    return Math.max(150000, Math.round(v));
+    var m = S.meta, out = outKind();
+    var v = QUALITY[preset] * dims.w * dims.h * m.fps * EFF[out];
+    if (m.srcVideoBps > 0) {
+      var pixelRatio = Math.pow((dims.w * dims.h) / (m.w * m.h), 0.75);
+      var cap = m.srcVideoBps * pixelRatio * CAP[preset] * EFF[out] / EFF[m.srcKind];
+      v = Math.min(v, cap);
+    }
+    return Math.max(100000, Math.round(v));
+  }
+  function estimateBytes(preset) {
+    var dims = targetSize(+$('maxh').value), m = S.meta;
+    var audio = S.fast ? S.fast.audioBytes : AUDIO_BPS * m.duration / 8;
+    return bitrateFor(preset, dims) * m.duration / 8 + audio;
   }
   function refreshEstimates() {
     if (!S.meta) return;
-    var dims = targetSize(+$('maxh').value);
     ['high', 'balanced', 'small'].forEach(function (p) {
-      var bytes = (bitrateFor(p, dims) + AUDIO_BPS) * S.meta.duration / 8;
-      $('e-' + p).textContent = '≈ ' + fmtSize(Math.min(bytes, S.file.size));
+      $('e-' + p).textContent = '≈ ' + fmtSize(Math.min(estimateBytes(p), S.file.size));
     });
+    refreshMode();
   }
+  function refreshMode() {
+    var chip = $('mode-chip'), txt = $('mode-text');
+    if (S.fast) {
+      var e = currentEncoder();
+      chip.className = 'chip';
+      chip.textContent = 'Fast mode';
+      txt.textContent = 'Output: ' + CODEC_NAME[e.kind] + ' MP4, ' + (e.hardware ? 'using your device’s hardware encoder.' : 'using the browser’s software encoder.') + ' Audio is copied unchanged.' +
+        (e.kind === 'avc' ? '' : ' ' + CODEC_NAME[e.kind] + ' plays in Chrome, VLC, Android and recent Windows and Mac. Choose H.264 for older devices.');
+    } else {
+      chip.className = 'chip slow';
+      chip.textContent = 'Real-time mode';
+      txt.textContent = S.slowReason + ' Expect it to take about ' + fmtTime(S.meta.duration) + '.';
+    }
+  }
+
+  /* ---------- file selection ---------- */
 
   function showError(msg) { var e = $('fileerr'); e.textContent = msg; e.hidden = !msg; }
 
@@ -280,49 +460,301 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
   function reset() {
     if (S.url) URL.revokeObjectURL(S.url);
     if (S.resultUrl) URL.revokeObjectURL(S.resultUrl);
-    S.url = S.resultUrl = S.resultBlob = null; S.meta = null;
+    S.url = S.resultUrl = S.resultBlob = null; S.meta = S.fast = S.encoders = null;
+    $('r-video').removeAttribute('src');
     ['info', 'tune', 'run', 'result', 'prog'].forEach(function (id) { $(id).hidden = true; });
   }
 
   function onFile(file) {
-    if (!file) return;
-    if (S.job) return;
+    if (!file || S.job) return;
     reset(); showError('');
-    if (!pickFormat()) { showError('This browser cannot record video. Open the page in a current version of Chrome.'); return; }
-    if (file.type && file.type.indexOf('video/') !== 0) { showError('That file is not a video.'); return; }
+    if (file.type && file.type.indexOf('video/') !== 0 && !/\.(mkv|mov|mp4|m4v|webm)$/i.test(file.name)) { showError('That file is not a video.'); return; }
     S.file = file; S.url = URL.createObjectURL(file);
     $('fname').textContent = file.name;
-    loadMeta(S.url).then(function (v) {
-      if (!v.videoWidth || !isFinite(v.duration)) throw new Error('unreadable');
-      var meta = { duration: v.duration, w: v.videoWidth, h: v.videoHeight, fps: 30 };
-      return probeFps(v).then(function (fps) { meta.fps = fps; return meta; });
-    }).then(function (meta) {
-      S.meta = meta;
+    $('reading').hidden = false;
+
+    analyzeFast(file).then(function (fast) {
+      if (fast && !fast.unsupportedAudio) {
+        return pickEncoders(even(fast.w), even(fast.h), fast.fps).then(function (enc) {
+          if (!enc.auto) { S.slowReason = 'This device has no fast video encoder available.'; return null; }
+          S.encoders = enc;
+          return fast;
+        });
+      }
+      S.slowReason = fast && fast.unsupportedAudio
+        ? 'Fast mode can’t copy this file’s audio format (' + fast.unsupportedAudio + ').'
+        : /\.(mp4|mov|m4v)$/i.test(file.name)
+          ? 'Fast mode can’t decode this file’s video format on this device.'
+          : 'Fast mode works with MP4 and MOV files only.';
+      return null;
+    }).then(function (fast) {
+      if (fast) {
+        S.fast = fast;
+        S.meta = { duration: fast.dur, w: fast.w, h: fast.h, fps: fast.fps, srcVideoBps: fast.srcVideoBps, srcKind: fast.srcKind };
+        return;
+      }
+      if (!recorderFormat()) throw new Error('norecorder');
+      return loadMeta(S.url).then(function (v) {
+        if (!v.videoWidth || !isFinite(v.duration)) throw new Error('unreadable');
+        var meta = { duration: v.duration, w: v.videoWidth, h: v.videoHeight, fps: 30, srcKind: 'avc' };
+        meta.srcVideoBps = Math.max(0, file.size * 8 / v.duration - AUDIO_BPS);
+        return probeFps(v).then(function (fps) { meta.fps = fps; S.meta = meta; });
+      });
+    }).then(function () {
+      var m = S.meta;
+      $('reading').hidden = true;
       $('i-size').textContent = fmtSize(file.size);
-      $('i-dur').textContent = fmtTime(meta.duration);
-      $('i-res').textContent = meta.w + '×' + meta.h;
-      $('i-fps').textContent = meta.fps + ' fps';
+      $('i-dur').textContent = fmtTime(m.duration);
+      $('i-res').textContent = m.w + '×' + m.h;
+      $('i-fps').textContent = (Math.abs(m.fps - Math.round(m.fps)) < 0.05 ? Math.round(m.fps) : m.fps.toFixed(2)) + ' fps';
+      var showFmt = !!(S.fast && S.encoders.auto && S.encoders.h264 && S.encoders.auto !== S.encoders.h264);
+      $('fmt').hidden = $('fmt-label').hidden = !showFmt;
       refreshEstimates();
       ['info', 'tune', 'run'].forEach(function (id) { $(id).hidden = false; });
-    }).catch(function () {
-      reset(); showError('This browser cannot read that file. Try an MP4, MOV or WebM video.');
+    }).catch(function (e) {
+      $('reading').hidden = true;
+      var keepName = S.file;
+      reset();
+      showError(e && e.message === 'norecorder'
+        ? 'This browser can’t compress this file. Open the page in a current version of Chrome, or convert the video to MP4 first.'
+        : 'This browser can’t read that file. Try an MP4, MOV or WebM video.');
     });
   }
 
-  function setProgress(p, elapsed) {
-    var pct = Math.min(100, Math.round(p * 100));
-    $('fill').style.width = pct + '%';
+  /* ---------- shared job UI ---------- */
+
+  var wakeLock = null;
+  function beginJob(hint) {
+    $('go').disabled = true; $('cancel').hidden = false; $('prog').hidden = false; $('result').hidden = true;
+    $('tune').style.opacity = .5; $('tune').style.pointerEvents = 'none';
+    $('prog-hint').textContent = hint;
+    $('speed').textContent = '';
+    showError('');
+    setProgress(0, 0, 0);
+    document.addEventListener('visibilitychange', onVis);
+    try { navigator.wakeLock && navigator.wakeLock.request('screen').then(function (l) { wakeLock = l; }, function () {}); } catch (e) {}
+  }
+  function endJob() {
+    S.job = null;
+    $('go').disabled = false; $('cancel').hidden = true;
+    $('tune').style.opacity = ''; $('tune').style.pointerEvents = '';
+    $('hidden-warn').hidden = true;
+    document.removeEventListener('visibilitychange', onVis);
+    try { if (wakeLock) wakeLock.release(); } catch (e) {}
+    wakeLock = null;
+  }
+  function onVis() { $('hidden-warn').hidden = !document.hidden; }
+  function setProgress(p, elapsed, mediaDone) {
+    var pct = Math.min(100, Math.floor(p * 100));
+    $('fill').style.width = (p * 100).toFixed(1) + '%';
     $('barwrap').setAttribute('aria-valuenow', pct);
     $('pct').textContent = pct + '%';
-    $('eta').textContent = p > 0.02 ? 'about ' + fmtTime(elapsed / p - elapsed) + ' left' : 'starting…';
+    $('eta').textContent = p > 0.01 && elapsed > 2 ? 'about ' + fmtTime(elapsed / p - elapsed) + ' left' : 'starting…';
+    if (mediaDone && elapsed > 2) $('speed').textContent = (mediaDone / elapsed).toFixed(1) + '× real time';
   }
 
   function compress() {
+    if (S.fast) compressFast(); else compressRealtime();
+  }
+
+  /* ---------- fast mode: WebCodecs ---------- */
+
+  function readSamples(file, samples) {
+    var start = samples[0].offset, end = start;
+    for (var i = 0; i < samples.length; i++) {
+      start = Math.min(start, samples[i].offset);
+      end = Math.max(end, samples[i].offset + samples[i].size);
+    }
+    if (end - start <= 64 * 1048576) {
+      return file.slice(start, end).arrayBuffer().then(function (buf) {
+        return samples.map(function (s) { return new Uint8Array(buf, s.offset - start, s.size); });
+      });
+    }
+    return Promise.all(samples.map(function (s) {
+      return file.slice(s.offset, s.offset + s.size).arrayBuffer().then(function (b) { return new Uint8Array(b); });
+    }));
+  }
+
+  // Collects the muxer's output as Blobs (Chrome keeps large Blobs on disk, not in memory).
+  function BlobSink() {
+    var parts = [], patches = [], end = 0;
+    this.onData = function (data, pos) {
+      if (pos > end) { parts.push(new Blob([new Uint8Array(pos - end)])); end = pos; }
+      var overlap = Math.min(data.byteLength, end - pos);
+      if (overlap > 0) patches.push({ pos: pos, blob: new Blob([data.slice(0, overlap)]) });
+      if (overlap < data.byteLength) { parts.push(new Blob([data.slice(overlap)])); end += data.byteLength - overlap; }
+    };
+    this.toBlob = function () {
+      var blob = new Blob(parts, { type: 'video/mp4' });
+      patches.forEach(function (p) {
+        blob = new Blob([blob.slice(0, p.pos), p.blob, blob.slice(p.pos + p.blob.size)], { type: 'video/mp4' });
+      });
+      return blob;
+    };
+  }
+
+  function compressFast() {
+    var F = S.fast, enc = currentEncoder();
     var preset = document.querySelector('input[name=q]:checked').value;
     var dims = targetSize(+$('maxh').value);
     var vbps = bitrateFor(preset, dims);
-    var mime = pickFormat();
-    var ext = mime.indexOf('mp4') === 5 ? 'mp4' : 'webm';
+    var fps = F.fps, gop = Math.max(1, Math.round(fps * 5));
+    var vtrak = F.vtrak, vs = vtrak.samples, vts = vtrak.mdia.mdhd.timescale, vshift = editShift(vtrak, F.movieTimescale);
+    var as = F.atrak ? F.atrak.samples : [], ats = F.atrak ? F.atrak.mdia.mdhd.timescale : 1, ashift = F.atrak ? editShift(F.atrak, F.movieTimescale) : 0;
+    var scale = dims.w !== F.w || dims.h !== F.h;
+    var canvas = scale ? new OffscreenCanvas(dims.w, dims.h) : null, ctx = canvas && canvas.getContext('2d');
+    var sink = new BlobSink(), started = performance.now();
+    var failure = null, cancelled = false, framesIn = 0, framesOut = 0, lastVideoUs = 0, firstVideoUs = -1, videoBytes = 0, ai = 0, audioMetaSent = false;
+    var decoder, encoder;
+
+    S.job = { cancel: function () { cancelled = true; } };
+    beginJob('Keep this tab open until it finishes. Your device can be used for other things meanwhile.');
+
+    var muxer = new Mp4Muxer.Muxer({
+      target: new Mp4Muxer.StreamTarget({ onData: sink.onData, chunked: true, chunkSize: 8 * 1048576 }),
+      fastStart: false,
+      firstTimestampBehavior: 'offset',
+      video: { codec: enc.kind, width: dims.w, height: dims.h, rotation: F.rotation },
+      audio: F.at ? { codec: 'aac', numberOfChannels: F.audioConfig.numberOfChannels, sampleRate: F.audioConfig.sampleRate } : undefined
+    });
+
+    encoder = new VideoEncoder({
+      output: function (chunk, meta) {
+        try { muxer.addVideoChunk(chunk, meta); } catch (e) { failure = failure || e; }
+        framesOut++; lastVideoUs = chunk.timestamp; videoBytes += chunk.byteLength;
+        if (firstVideoUs < 0) firstVideoUs = chunk.timestamp;
+      },
+      error: function (e) { failure = failure || e; }
+    });
+    encoder.configure(encoderConfig(enc.kind, enc.codec, dims.w, dims.h, fps, vbps, enc.hw));
+
+    decoder = new VideoDecoder({
+      output: function (frame) {
+        if (frame.timestamp < 0 || failure || cancelled || encoder.state !== 'configured') { frame.close(); return; }
+        var f = frame;
+        if (scale) {
+          ctx.drawImage(frame, 0, 0, dims.w, dims.h);
+          f = new VideoFrame(canvas, { timestamp: frame.timestamp, duration: frame.duration || undefined });
+          frame.close();
+        }
+        try { encoder.encode(f, { keyFrame: framesIn % gop === 0 }); } catch (e) { failure = failure || e; }
+        f.close();
+        framesIn++;
+      },
+      error: function (e) { failure = failure || e; }
+    });
+    decoder.configure(F.decoderConfig);
+
+    function waitQueues() {
+      return new Promise(function (resolve) {
+        var done = false;
+        function go() {
+          if (done) return; done = true;
+          decoder.removeEventListener('dequeue', go); encoder.removeEventListener('dequeue', go);
+          resolve();
+        }
+        decoder.addEventListener('dequeue', go); encoder.addEventListener('dequeue', go);
+        setTimeout(go, 50);
+      });
+    }
+    function audioTs(s) { return Math.round((s.cts - ashift) * 1e6 / ats); }
+    // Copies audio samples up to `untilUs` into the output, keeping it interleaved with the video.
+    function pumpAudio(untilUs) {
+      if (ai >= as.length) return Promise.resolve();
+      var batch = [];
+      while (ai < as.length && batch.length < 400 && audioTs(as[ai]) <= untilUs) batch.push(as[ai++]);
+      if (!batch.length) return Promise.resolve();
+      return readSamples(S.file, batch).then(function (datas) {
+        for (var k = 0; k < batch.length; k++) {
+          var ts = audioTs(batch[k]);
+          if (ts < 0) continue;
+          var meta;
+          if (!audioMetaSent) { meta = { decoderConfig: F.audioConfig }; audioMetaSent = true; }
+          muxer.addAudioChunkRaw(datas[k], 'key', ts, Math.round(batch[k].duration * 1e6 / ats), meta);
+        }
+        return pumpAudio(untilUs);
+      });
+    }
+
+    var BATCH = 90, i = 0, noGain = 0;
+    function check() {
+      if (cancelled) throw new Error('cancelled');
+      if (failure) throw failure;
+    }
+    function step() {
+      check();
+      if (i >= vs.length) return Promise.resolve();
+      var batch = vs.slice(i, i + BATCH);
+      i += batch.length;
+      return readSamples(S.file, batch).then(function (datas) {
+        check();
+        for (var k = 0; k < batch.length; k++) {
+          var s = batch[k];
+          decoder.decode(new EncodedVideoChunk({
+            type: s.is_sync ? 'key' : 'delta',
+            timestamp: Math.round((s.cts - vshift) * 1e6 / vts),
+            duration: Math.round(s.duration * 1e6 / vts),
+            data: datas[k]
+          }));
+        }
+        return (function drain() {
+          check();
+          if (decoder.decodeQueueSize > 45 || encoder.encodeQueueSize > 20) return waitQueues().then(drain);
+        })();
+      }).then(function () {
+        return pumpAudio(lastVideoUs + 1e6);
+      }).then(function () {
+        // Stop early when the output is on course to be no smaller than the original.
+        var doneUs = lastVideoUs - Math.max(0, firstVideoUs);
+        if (doneUs > Math.max(60e6, F.dur * 1e6 * 0.04)) {
+          var projected = videoBytes * F.dur * 1e6 / doneUs + F.audioBytes;
+          if (projected > S.file.size * 0.97) { noGain = projected; throw new Error('no gain'); }
+        }
+        var elapsed = (performance.now() - started) / 1000;
+        setProgress(Math.min(0.99, i / vs.length), elapsed, lastVideoUs / 1e6);
+        return step();
+      });
+    }
+
+    step().then(function () {
+      return decoder.flush();
+    }).then(function () {
+      return encoder.flush();
+    }).then(function () {
+      check();
+      return pumpAudio(Infinity);
+    }).then(function () {
+      check();
+      if (!framesOut) throw new Error('no frames');
+      muxer.finalize();
+      var secs = (performance.now() - started) / 1000;
+      try { decoder.close(); encoder.close(); } catch (e) {}
+      endJob();
+      showResult(sink.toBlob(), 'mp4', secs);
+    }).catch(function (e) {
+      try { if (decoder.state !== 'closed') decoder.close(); } catch (x) {}
+      try { if (encoder.state !== 'closed') encoder.close(); } catch (x) {}
+      endJob();
+      $('prog').hidden = true;
+      if (cancelled) return;
+      if (noGain) {
+        showError('Stopped early: at these settings the result would be about ' + fmtSize(noGain) + ', no smaller than the original. This video is already tightly compressed. ' +
+          (currentEncoder().kind === 'avc' && S.encoders.auto && S.encoders.auto.kind !== 'avc' ? 'Choose the “Smallest file” format, or ' : 'Try ') + 'Smallest quality or a lower resolution.');
+        return;
+      }
+      console.error(e);
+      showError('Fast mode stopped part way through (' + ((e && e.message) || 'encoder error') + '). Try the “Plays everywhere (H.264)” format, or a different quality.');
+    });
+  }
+
+  /* ---------- real-time mode: MediaRecorder ---------- */
+
+  function compressRealtime() {
+    var preset = document.querySelector('input[name=q]:checked').value;
+    var dims = targetSize(+$('maxh').value);
+    var vbps = bitrateFor(preset, dims);
+    var mime = recorderFormat();
+    var ext = mime.indexOf('mp4') === 6 ? 'mp4' : 'webm';
 
     var v = document.createElement('video');
     v.playsInline = true; v.preload = 'auto'; v.src = S.url;
@@ -330,28 +762,18 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
     canvas.width = dims.w; canvas.height = dims.h;
     var ctx = canvas.getContext('2d', { alpha: false });
     var actx = null, chunks = [], recorder, cancelled = false, stopped = false, started = 0;
-    var job = S.job = { cancel: function () { cancelled = true; finish(); } };
-
-    $('go').disabled = true; $('cancel').hidden = false; $('prog').hidden = false; $('result').hidden = true;
-    ['tune'].forEach(function (id) { $(id).style.opacity = .5; $(id).style.pointerEvents = 'none'; });
-    setProgress(0, 0);
+    S.job = { cancel: function () { cancelled = true; finish(); } };
+    beginJob('Real-time mode plays the video through once, so it takes about as long as the video itself. Keep this tab open and visible.');
 
     function cleanup() {
       try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {}
       try { if (actx) actx.close(); } catch (e) {}
-      S.job = null;
-      $('go').disabled = false; $('cancel').hidden = true;
-      $('tune').style.opacity = ''; $('tune').style.pointerEvents = '';
-      $('hidden-warn').hidden = true;
-      document.removeEventListener('visibilitychange', onVis);
+      endJob();
     }
     function finish() {
       if (stopped) return; stopped = true;
       if (recorder && recorder.state !== 'inactive') recorder.stop(); else { cleanup(); $('prog').hidden = true; }
     }
-    function onVis() { $('hidden-warn').hidden = !document.hidden; }
-    document.addEventListener('visibilitychange', onVis);
-
     function fail(msg) { stopped = true; cleanup(); $('prog').hidden = true; showError(msg); }
 
     v.onerror = function () { fail('The video stopped playing part way through. Try another file.'); };
@@ -371,14 +793,15 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
       recorder.onerror = function () { fail('The encoder reported an error.'); };
       recorder.onstop = function () {
         var blob = new Blob(chunks, { type: mime.split(';')[0] });
+        var secs = (performance.now() - started) / 1000;
         cleanup();
         if (cancelled) { $('prog').hidden = true; return; }
-        showResult(blob, ext);
+        showResult(blob, ext, secs);
       };
       var drawLoop = function () {
         if (stopped) return;
         ctx.drawImage(v, 0, 0, dims.w, dims.h);
-        setProgress(v.currentTime / S.meta.duration, (performance.now() - started) / 1000);
+        setProgress(v.currentTime / S.meta.duration, (performance.now() - started) / 1000, 0);
         if ('requestVideoFrameCallback' in v) v.requestVideoFrameCallback(drawLoop); else requestAnimationFrame(drawLoop);
       };
       v.onended = function () { ctx.drawImage(v, 0, 0, dims.w, dims.h); setTimeout(finish, 150); };
@@ -390,7 +813,9 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
     };
   }
 
-  function showResult(blob, ext) {
+  /* ---------- result ---------- */
+
+  function showResult(blob, ext, secs) {
     S.resultBlob = blob; S.resultExt = ext;
     if (S.resultUrl) URL.revokeObjectURL(S.resultUrl);
     S.resultUrl = URL.createObjectURL(blob);
@@ -398,27 +823,33 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
     $('r-old').textContent = fmtSize(oldB); $('r-new').textContent = fmtSize(newB);
     $('r-pct').textContent = saved > 0 ? '−' + Math.round(saved * 100) + '%' : '+' + Math.round(-saved * 100) + '%';
     $('r-pct').style.color = saved > 0 ? 'var(--good)' : 'var(--warn)';
+    $('r-time').textContent = 'Finished in ' + fmtTime(secs) + (S.meta.duration && secs > 0 ? ' (' + (S.meta.duration / secs).toFixed(1) + '× real time).' : '.');
     var w = $('r-warn');
     if (saved <= 0.02) {
-      w.textContent = 'This video was already compressed about as far as it goes. Keep the original, or try the Smallest option.';
+      w.textContent = 'This video was already compressed about as far as it goes. Keep the original, or try Smallest or a lower resolution.';
       w.hidden = false;
     } else w.hidden = true;
     $('r-video').src = S.resultUrl;
-    $('save').hidden = !downloads;
-    $('save-note').textContent = downloads ? '' : 'Saving is not available here. Press and hold or right-click the video to save it.';
+    $('save-note').textContent = '';
     $('prog').hidden = true; $('result').hidden = false;
     $('result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
   function save() {
-    if (!S.resultBlob || !downloads) return;
-    var base = S.file.name.replace(/\.[^.]+$/, '') || 'video';
-    downloads.save({ filename: base + '_compressed.' + S.resultExt, data: S.resultBlob }).then(function () {
-      $('save-note').textContent = 'Saved.';
-    }, function (err) {
-      if (err && err.code === 'declined') return;
-      $('save-note').textContent = 'Could not save the file. Press and hold or right-click the video to save it instead.';
-    });
+    if (!S.resultBlob) return;
+    var name = (S.file.name.replace(/\.[^.]+$/, '') || 'video') + '_compressed.' + S.resultExt;
+    if (downloads) {
+      downloads.save({ filename: name, data: S.resultBlob }).then(function () {
+        $('save-note').textContent = 'Saved.';
+      }, function (err) {
+        if (err && err.code === 'declined') return;
+        $('save-note').textContent = 'Could not save the file (' + ((err && err.code) || 'error') + '). Right-click the video and choose “Save video as” instead.';
+      });
+      return;
+    }
+    var a = document.createElement('a');
+    a.href = S.resultUrl; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
   }
 
   $('file').addEventListener('change', function (e) { onFile(e.target.files[0]); e.target.value = ''; });
@@ -427,6 +858,7 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
   ['dragleave', 'drop'].forEach(function (n) { drop.addEventListener(n, function (e) { e.preventDefault(); drop.classList.remove('over'); }); });
   drop.addEventListener('drop', function (e) { onFile(e.dataTransfer.files[0]); });
   $('maxh').addEventListener('change', refreshEstimates);
+  $('fmt').addEventListener('change', refreshEstimates);
   $('go').addEventListener('click', compress);
   $('cancel').addEventListener('click', function () { if (S.job) S.job.cancel(); });
   $('save').addEventListener('click', save);
