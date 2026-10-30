@@ -1,0 +1,435 @@
+<title>Video Compressor</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one narrow working column, three labelled steps, result appears in place of the progress bar. */
+:root {
+  --bg: #f3f4f2;
+  --surface: #ffffff;
+  --ink: #16201e;
+  --muted: #5c6a67;
+  --line: #d9dedb;
+  --accent: #0b6e66;
+  --accent-ink: #ffffff;
+  --accent-soft: #dcefec;
+  --good: #1a7f4b;
+  --warn: #a35a00;
+  --warn-soft: #fbeedb;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101615; --surface: #172120; --ink: #e8efed; --muted: #92a39f; --line: #2a3836;
+    --accent: #4fc7b9; --accent-ink: #072522; --accent-soft: #19332f;
+    --good: #5fd195; --warn: #f0b35c; --warn-soft: #2f2410;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101615; --surface: #172120; --ink: #e8efed; --muted: #92a39f; --line: #2a3836;
+  --accent: #4fc7b9; --accent-ink: #072522; --accent-soft: #19332f;
+  --good: #5fd195; --warn: #f0b35c; --warn-soft: #2f2410;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 15px/1.5 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 48px;
+}
+main { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+h1 { font: 700 clamp(28px, 6vw, 40px)/1.05 var(--font-display); margin: 0; letter-spacing: -0.02em; text-wrap: balance; }
+.lede { color: var(--muted); margin: 8px 0 0; max-width: 56ch; }
+.step { display: flex; flex-direction: column; gap: 12px; }
+.label { font: 500 11px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+
+/* file picker */
+.drop {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
+  border: 1.5px dashed var(--line); border-radius: 10px; padding: 28px 16px;
+  background: var(--surface); cursor: pointer; transition: border-color .15s, background .15s;
+}
+.drop:hover, .drop.over, .drop:focus-within { border-color: var(--accent); background: var(--accent-soft); }
+.drop strong { font: 600 17px var(--font-display); }
+.drop span { color: var(--muted); font-size: 13px; }
+.drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.fileinfo { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px 16px; }
+.fileinfo div { min-width: 0; }
+.fileinfo dt { font: 500 11px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.fileinfo dd { margin: 2px 0 0; font: 500 15px var(--font-mono); overflow-wrap: anywhere; }
+.fname { font-weight: 600; margin-bottom: 12px; overflow-wrap: anywhere; }
+
+/* quality options */
+.quality { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.quality input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.quality label {
+  display: flex; flex-direction: column; gap: 2px; padding: 12px; min-width: 0;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface); cursor: pointer;
+}
+.quality label b { font: 600 15px var(--font-display); }
+.quality label small { color: var(--muted); font-size: 12px; }
+.quality label .est { font: 500 15px var(--font-mono); margin-top: 6px; }
+.quality input:checked + label { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--accent-soft); }
+.quality input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.row label { color: var(--muted); font-size: 13px; }
+select {
+  font: 500 14px var(--font-body); color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+}
+.hint { color: var(--muted); font-size: 13px; margin: 0; }
+
+/* actions */
+button {
+  font: 600 15px var(--font-body); border-radius: 8px; padding: 11px 20px; cursor: pointer;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink);
+}
+button.secondary { background: transparent; color: var(--ink); border-color: var(--line); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* progress */
+.bar { height: 10px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .25s linear; }
+.stats { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; font: 400 13px var(--font-mono); color: var(--muted); margin-top: 10px; }
+.notice { background: var(--warn-soft); color: var(--warn); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+
+/* result */
+.result-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+.big { font: 700 clamp(32px, 8vw, 48px)/1 var(--font-display); color: var(--good); letter-spacing: -0.02em; }
+.sizes { font: 500 15px var(--font-mono); }
+.sizes s { color: var(--muted); }
+video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; display: block; margin-top: 12px; }
+.foot { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; }
+@media (max-width: 520px) { .quality { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .bar > i, .drop { transition: none; } }
+</style>
+
+<main>
+  <header>
+    <h1>Video Compressor</h1>
+    <p class="lede">Make a video file smaller without visible loss. Everything runs inside this browser tab, so your video is never uploaded.</p>
+  </header>
+
+  <section class="step" aria-labelledby="s1">
+    <div class="label" id="s1">Step 1 · Choose a video</div>
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept="video/*">
+      <strong>Select a video file</strong>
+      <span>or drop one here. MP4, MOV, WebM and most phone recordings work.</span>
+    </label>
+    <div class="panel" id="info" hidden>
+      <div class="fname" id="fname"></div>
+      <dl class="fileinfo" style="margin:0">
+        <div><dt>Size</dt><dd id="i-size"></dd></div>
+        <div><dt>Length</dt><dd id="i-dur"></dd></div>
+        <div><dt>Resolution</dt><dd id="i-res"></dd></div>
+        <div><dt>Frame rate</dt><dd id="i-fps"></dd></div>
+      </dl>
+    </div>
+    <div class="notice" id="fileerr" hidden></div>
+  </section>
+
+  <section class="step" id="tune" aria-labelledby="s2" hidden>
+    <div class="label" id="s2">Step 2 · Pick the quality</div>
+    <div class="quality" role="radiogroup" aria-label="Quality">
+      <input type="radio" name="q" id="q-high" value="high"><label for="q-high"><b>High</b><small>Looks identical</small><span class="est" id="e-high">–</span></label>
+      <input type="radio" name="q" id="q-balanced" value="balanced" checked><label for="q-balanced"><b>Balanced</b><small>Recommended</small><span class="est" id="e-balanced">–</span></label>
+      <input type="radio" name="q" id="q-small" value="small"><label for="q-small"><b>Smallest</b><small>Slight softening</small><span class="est" id="e-small">–</span></label>
+    </div>
+    <div class="row">
+      <label for="maxh">Resolution</label>
+      <select id="maxh">
+        <option value="0">Keep original</option>
+        <option value="1080">Limit to 1080p</option>
+        <option value="720">Limit to 720p</option>
+        <option value="480">Limit to 480p</option>
+      </select>
+    </div>
+    <p class="hint">Estimated sizes are approximate. Videos that are already small are never re-encoded larger than the original rate.</p>
+  </section>
+
+  <section class="step" id="run" aria-labelledby="s3" hidden>
+    <div class="label" id="s3">Step 3 · Compress</div>
+    <div class="actions">
+      <button id="go">Compress video</button>
+      <button id="cancel" class="secondary" hidden>Cancel</button>
+    </div>
+    <div class="panel" id="prog" hidden>
+      <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="barwrap"><i id="fill"></i></div>
+      <div class="stats"><span id="pct">0%</span><span id="eta"></span></div>
+      <p class="hint" style="margin-top:10px">Compression plays the video through once, so it takes about as long as the video itself. Keep this tab open and visible.</p>
+      <div class="notice" id="hidden-warn" hidden style="margin-top:10px">This tab is in the background. Switch back to it so no frames are skipped.</div>
+    </div>
+  </section>
+
+  <section class="step" id="result" aria-labelledby="s4" hidden>
+    <div class="label" id="s4">Result</div>
+    <div class="panel">
+      <div class="result-head">
+        <span class="big" id="r-pct"></span>
+        <span class="sizes"><s id="r-old"></s> → <b id="r-new"></b></span>
+      </div>
+      <div class="notice" id="r-warn" hidden style="margin-top:12px"></div>
+      <video id="r-video" controls playsinline></video>
+      <div class="actions" style="margin-top:12px">
+        <button id="save">Save compressed video</button>
+        <button id="again" class="secondary">Try other settings</button>
+      </div>
+      <p class="hint" id="save-note" style="margin-top:10px"></p>
+    </div>
+  </section>
+
+  <p class="foot">Compression uses your device's built-in video encoder. Quality is set by bitrate per pixel, scaled to the resolution and frame rate of your video. Audio is re-encoded at 128 kbps.</p>
+</main>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  // bits per pixel per frame, by preset
+  var QUALITY = { high: 0.10, balanced: 0.06, small: 0.035 };
+  var AUDIO_BPS = 128000;
+  var FORMATS = [
+    'video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4',
+    'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'
+  ];
+  var S = { file: null, url: null, meta: null, job: null, resultBlob: null, resultExt: 'mp4', resultUrl: null };
+  var downloads = null;
+  try {
+    if (window.claude && window.claude.use) window.claude.use('downloads').then(function (d) { downloads = d; }, function () {});
+  } catch (e) {}
+
+  function fmtSize(b) {
+    if (b >= 1073741824) return (b / 1073741824).toFixed(2) + ' GB';
+    if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
+    return Math.max(1, Math.round(b / 1024)) + ' KB';
+  }
+  function fmtTime(s) {
+    s = Math.max(0, Math.round(s));
+    var m = Math.floor(s / 60), r = s % 60;
+    return m + ':' + (r < 10 ? '0' : '') + r;
+  }
+  function even(n) { return Math.max(2, Math.round(n / 2) * 2); }
+  function pickFormat() {
+    if (!window.MediaRecorder) return null;
+    for (var i = 0; i < FORMATS.length; i++) if (MediaRecorder.isTypeSupported(FORMATS[i])) return FORMATS[i];
+    return null;
+  }
+
+  function targetSize(maxH) {
+    var m = S.meta, w = m.w, h = m.h;
+    if (maxH && h > maxH) { w = even(m.w * maxH / m.h); h = even(maxH); } else { w = even(w); h = even(h); }
+    return { w: w, h: h };
+  }
+  function bitrateFor(preset, dims) {
+    var m = S.meta, fmt = pickFormat() || '';
+    var v = QUALITY[preset] * dims.w * dims.h * m.fps;
+    if (fmt.indexOf('webm') === 0 && fmt.indexOf('vp9') > -1) v *= 0.8;
+    var srcVideo = Math.max(0, S.file.size * 8 / m.duration - AUDIO_BPS);
+    if (srcVideo > 0) v = Math.min(v, srcVideo * 0.9);
+    return Math.max(150000, Math.round(v));
+  }
+  function refreshEstimates() {
+    if (!S.meta) return;
+    var dims = targetSize(+$('maxh').value);
+    ['high', 'balanced', 'small'].forEach(function (p) {
+      var bytes = (bitrateFor(p, dims) + AUDIO_BPS) * S.meta.duration / 8;
+      $('e-' + p).textContent = '≈ ' + fmtSize(Math.min(bytes, S.file.size));
+    });
+  }
+
+  function showError(msg) { var e = $('fileerr'); e.textContent = msg; e.hidden = !msg; }
+
+  function loadMeta(url) {
+    return new Promise(function (resolve, reject) {
+      var v = document.createElement('video');
+      v.preload = 'metadata'; v.muted = true; v.playsInline = true;
+      v.onloadedmetadata = function () { resolve(v); };
+      v.onerror = function () { reject(new Error('unreadable')); };
+      v.src = url;
+    });
+  }
+  function probeFps(v) {
+    if (!('requestVideoFrameCallback' in v)) return Promise.resolve(30);
+    return new Promise(function (res) {
+      var times = [], done = false;
+      function finish() {
+        if (done) return; done = true;
+        v.pause();
+        var fps = 30;
+        if (times.length > 3) fps = (times.length - 1) / (times[times.length - 1] - times[0]);
+        var common = [24, 25, 30, 50, 60];
+        fps = common.reduce(function (a, b) { return Math.abs(b - fps) < Math.abs(a - fps) ? b : a; });
+        res(fps);
+      }
+      function cb(now, md) {
+        times.push(md.mediaTime);
+        if (times.length >= 24) finish(); else v.requestVideoFrameCallback(cb);
+      }
+      v.requestVideoFrameCallback(cb);
+      v.play().then(function () { setTimeout(finish, 1500); }, finish);
+    });
+  }
+
+  function reset() {
+    if (S.url) URL.revokeObjectURL(S.url);
+    if (S.resultUrl) URL.revokeObjectURL(S.resultUrl);
+    S.url = S.resultUrl = S.resultBlob = null; S.meta = null;
+    ['info', 'tune', 'run', 'result', 'prog'].forEach(function (id) { $(id).hidden = true; });
+  }
+
+  function onFile(file) {
+    if (!file) return;
+    if (S.job) return;
+    reset(); showError('');
+    if (!pickFormat()) { showError('This browser cannot record video. Open the page in a current version of Chrome.'); return; }
+    if (file.type && file.type.indexOf('video/') !== 0) { showError('That file is not a video.'); return; }
+    S.file = file; S.url = URL.createObjectURL(file);
+    $('fname').textContent = file.name;
+    loadMeta(S.url).then(function (v) {
+      if (!v.videoWidth || !isFinite(v.duration)) throw new Error('unreadable');
+      var meta = { duration: v.duration, w: v.videoWidth, h: v.videoHeight, fps: 30 };
+      return probeFps(v).then(function (fps) { meta.fps = fps; return meta; });
+    }).then(function (meta) {
+      S.meta = meta;
+      $('i-size').textContent = fmtSize(file.size);
+      $('i-dur').textContent = fmtTime(meta.duration);
+      $('i-res').textContent = meta.w + '×' + meta.h;
+      $('i-fps').textContent = meta.fps + ' fps';
+      refreshEstimates();
+      ['info', 'tune', 'run'].forEach(function (id) { $(id).hidden = false; });
+    }).catch(function () {
+      reset(); showError('This browser cannot read that file. Try an MP4, MOV or WebM video.');
+    });
+  }
+
+  function setProgress(p, elapsed) {
+    var pct = Math.min(100, Math.round(p * 100));
+    $('fill').style.width = pct + '%';
+    $('barwrap').setAttribute('aria-valuenow', pct);
+    $('pct').textContent = pct + '%';
+    $('eta').textContent = p > 0.02 ? 'about ' + fmtTime(elapsed / p - elapsed) + ' left' : 'starting…';
+  }
+
+  function compress() {
+    var preset = document.querySelector('input[name=q]:checked').value;
+    var dims = targetSize(+$('maxh').value);
+    var vbps = bitrateFor(preset, dims);
+    var mime = pickFormat();
+    var ext = mime.indexOf('mp4') === 5 ? 'mp4' : 'webm';
+
+    var v = document.createElement('video');
+    v.playsInline = true; v.preload = 'auto'; v.src = S.url;
+    var canvas = document.createElement('canvas');
+    canvas.width = dims.w; canvas.height = dims.h;
+    var ctx = canvas.getContext('2d', { alpha: false });
+    var actx = null, chunks = [], recorder, cancelled = false, stopped = false, started = 0;
+    var job = S.job = { cancel: function () { cancelled = true; finish(); } };
+
+    $('go').disabled = true; $('cancel').hidden = false; $('prog').hidden = false; $('result').hidden = true;
+    ['tune'].forEach(function (id) { $(id).style.opacity = .5; $(id).style.pointerEvents = 'none'; });
+    setProgress(0, 0);
+
+    function cleanup() {
+      try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {}
+      try { if (actx) actx.close(); } catch (e) {}
+      S.job = null;
+      $('go').disabled = false; $('cancel').hidden = true;
+      $('tune').style.opacity = ''; $('tune').style.pointerEvents = '';
+      $('hidden-warn').hidden = true;
+      document.removeEventListener('visibilitychange', onVis);
+    }
+    function finish() {
+      if (stopped) return; stopped = true;
+      if (recorder && recorder.state !== 'inactive') recorder.stop(); else { cleanup(); $('prog').hidden = true; }
+    }
+    function onVis() { $('hidden-warn').hidden = !document.hidden; }
+    document.addEventListener('visibilitychange', onVis);
+
+    function fail(msg) { stopped = true; cleanup(); $('prog').hidden = true; showError(msg); }
+
+    v.onerror = function () { fail('The video stopped playing part way through. Try another file.'); };
+    v.onloadeddata = function () {
+      try {
+        var stream = new MediaStream(canvas.captureStream().getVideoTracks());
+        try {
+          actx = new (window.AudioContext || window.webkitAudioContext)();
+          var src = actx.createMediaElementSource(v);
+          var dest = actx.createMediaStreamDestination();
+          src.connect(dest);
+          dest.stream.getAudioTracks().forEach(function (t) { stream.addTrack(t); });
+        } catch (e) { actx = null; }
+        recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: vbps, audioBitsPerSecond: AUDIO_BPS });
+      } catch (e) { return fail('This browser could not start the encoder.'); }
+      recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+      recorder.onerror = function () { fail('The encoder reported an error.'); };
+      recorder.onstop = function () {
+        var blob = new Blob(chunks, { type: mime.split(';')[0] });
+        cleanup();
+        if (cancelled) { $('prog').hidden = true; return; }
+        showResult(blob, ext);
+      };
+      var drawLoop = function () {
+        if (stopped) return;
+        ctx.drawImage(v, 0, 0, dims.w, dims.h);
+        setProgress(v.currentTime / S.meta.duration, (performance.now() - started) / 1000);
+        if ('requestVideoFrameCallback' in v) v.requestVideoFrameCallback(drawLoop); else requestAnimationFrame(drawLoop);
+      };
+      v.onended = function () { ctx.drawImage(v, 0, 0, dims.w, dims.h); setTimeout(finish, 150); };
+      ctx.drawImage(v, 0, 0, dims.w, dims.h);
+      if (actx && actx.state === 'suspended') actx.resume();
+      recorder.start(1000);
+      started = performance.now();
+      v.play().then(drawLoop, function () { fail('The browser blocked playback. Click Compress again.'); });
+    };
+  }
+
+  function showResult(blob, ext) {
+    S.resultBlob = blob; S.resultExt = ext;
+    if (S.resultUrl) URL.revokeObjectURL(S.resultUrl);
+    S.resultUrl = URL.createObjectURL(blob);
+    var oldB = S.file.size, newB = blob.size, saved = 1 - newB / oldB;
+    $('r-old').textContent = fmtSize(oldB); $('r-new').textContent = fmtSize(newB);
+    $('r-pct').textContent = saved > 0 ? '−' + Math.round(saved * 100) + '%' : '+' + Math.round(-saved * 100) + '%';
+    $('r-pct').style.color = saved > 0 ? 'var(--good)' : 'var(--warn)';
+    var w = $('r-warn');
+    if (saved <= 0.02) {
+      w.textContent = 'This video was already compressed about as far as it goes. Keep the original, or try the Smallest option.';
+      w.hidden = false;
+    } else w.hidden = true;
+    $('r-video').src = S.resultUrl;
+    $('save').hidden = !downloads;
+    $('save-note').textContent = downloads ? '' : 'Saving is not available here. Press and hold or right-click the video to save it.';
+    $('prog').hidden = true; $('result').hidden = false;
+    $('result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function save() {
+    if (!S.resultBlob || !downloads) return;
+    var base = S.file.name.replace(/\.[^.]+$/, '') || 'video';
+    downloads.save({ filename: base + '_compressed.' + S.resultExt, data: S.resultBlob }).then(function () {
+      $('save-note').textContent = 'Saved.';
+    }, function (err) {
+      if (err && err.code === 'declined') return;
+      $('save-note').textContent = 'Could not save the file. Press and hold or right-click the video to save it instead.';
+    });
+  }
+
+  $('file').addEventListener('change', function (e) { onFile(e.target.files[0]); e.target.value = ''; });
+  var drop = $('drop');
+  ['dragenter', 'dragover'].forEach(function (n) { drop.addEventListener(n, function (e) { e.preventDefault(); drop.classList.add('over'); }); });
+  ['dragleave', 'drop'].forEach(function (n) { drop.addEventListener(n, function (e) { e.preventDefault(); drop.classList.remove('over'); }); });
+  drop.addEventListener('drop', function (e) { onFile(e.dataTransfer.files[0]); });
+  $('maxh').addEventListener('change', refreshEstimates);
+  $('go').addEventListener('click', compress);
+  $('cancel').addEventListener('click', function () { if (S.job) S.job.cancel(); });
+  $('save').addEventListener('click', save);
+  $('again').addEventListener('click', function () { $('result').hidden = true; $('tune').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+})();
+</script>
