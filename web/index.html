@@ -108,6 +108,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); o
 .sizes s { color: var(--muted); }
 video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; display: block; margin-top: 12px; }
 .foot { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; }
+.ver { display: block; margin-top: 8px; font: 500 12px var(--font-mono); letter-spacing: .04em; }
 @media (max-width: 520px) { .quality { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .bar > i, .drop { transition: none; } }
 .mode { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
@@ -199,7 +200,7 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
     </div>
   </section>
 
-  <p class="foot">Fast mode reads MP4 and MOV files directly and re-encodes the picture with your device's video encoder, usually many times faster than playback. The audio is copied unchanged. Other formats fall back to real-time mode, which plays the video through once and re-encodes the audio at 128 kbps.</p>
+  <p class="foot">Fast mode reads MP4 and MOV files directly and re-encodes the picture with your device's video encoder, usually many times faster than playback. The audio is copied unchanged. Other formats fall back to real-time mode, which plays the video through once and re-encodes the audio at 128 kbps. <span class="ver">Version 5 · 30 Oct 2026</span></p>
 </main>
 
 <script src="vendor/mp4box.all.min.js"></script>
