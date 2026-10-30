@@ -37,3 +37,9 @@ discarded (override with `--keep-larger`). The original is never modified.
 ```bash
 pip install pytest && python3 -m pytest tests
 ```
+
+## Web version (no install, works on Chromebook)
+`web/index.html` is a single-file browser app. Open it in Chrome, pick a video,
+choose High / Balanced / Smallest and save the result. Nothing is uploaded; the
+video is re-encoded in the tab using the browser's built-in encoder. It runs in
+real time (a 5-minute video takes about 5 minutes) and the tab must stay visible.
