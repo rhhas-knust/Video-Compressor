@@ -57,6 +57,15 @@ High / Balanced / Smallest and save the result. Nothing is uploaded.
   parts never exceed the chosen length). The vertical 9:16 options re-encode each
   part as an H.264 MP4, cropping the middle or fitting over a blurred background,
   with an optional "Part 1/N" label.
+- **Transcribe & notes**: turns speech into a timestamped transcript with the
+  Whisper model (transformers.js), run on the device. The model (about 40 MB, or
+  80 MB for "More accurate") downloads once from Hugging Face and is cached;
+  transformers.js itself loads from jsDelivr. The
+  page then picks out the important sentences (by repeated topic words and cue
+  phrases such as "important" or "remember") and lists the main topics. Save as
+  .txt, subtitles (.srt) or notes; a From/To range lets long videos be done in
+  pieces. Needs the GitHub Pages version (the claude.ai view blocks the model
+  download).
 - **Real-time mode** (other formats, e.g. MKV): plays the video through once
   with MediaRecorder, so it takes as long as the video. Only compression is
   available in this mode.
