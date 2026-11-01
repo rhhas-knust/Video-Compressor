@@ -48,8 +48,18 @@ High / Balanced / Smallest and save the result. Nothing is uploaded.
   available; AV1 shrinks already-compressed videos that H.264 cannot.
   "Plays everywhere" uses H.264. If the output is on course to be no smaller
   than the original, it stops early and says so.
+- **Audio**: when compressing, keep the original audio or re-encode it smaller
+  (96 or 64 kbps). AAC is used where Chrome can encode it, Opus otherwise.
+- **Extract audio**: save the soundtrack as `.m4a`. "Original" copies the AAC
+  stream unchanged, instantly; the smaller options re-encode it.
+- **Split for Shorts & TikTok**: cut a long video into parts of 30 s to 10 min.
+  "Keep original" cuts at keyframes without re-encoding (instant, no quality loss,
+  parts never exceed the chosen length). The vertical 9:16 options re-encode each
+  part as an H.264 MP4, cropping the middle or fitting over a blurred background,
+  with an optional "Part 1/N" label.
 - **Real-time mode** (other formats, e.g. MKV): plays the video through once
-  with MediaRecorder, so it takes as long as the video.
+  with MediaRecorder, so it takes as long as the video. Only compression is
+  available in this mode.
 
 Hosted with GitHub Pages (Settings → Pages → Deploy from branch `main`, `/ (root)`):
 https://rhhas-knust.github.io/Video-Compressor/ redirects to the app in `web/`.

@@ -3,7 +3,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
-/* Layout: one narrow working column, three labelled steps, result appears in place of the progress bar. */
+/* Layout: one narrow working column, three labelled steps; step 2 switches between three tools, results appear below. */
 :root {
   --bg: #f3f4f2;
   --surface: #ffffff;
@@ -35,6 +35,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   background: var(--bg); color: var(--ink);
   font: 15px/1.5 var(--font-body);
@@ -114,13 +115,27 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
 .mode { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
 .chip { font: 500 12px var(--font-mono); letter-spacing: .04em; padding: 3px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
 .chip.slow { background: var(--warn-soft); color: var(--warn); }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.tab { flex: 1 1 150px; background: transparent; color: var(--ink); border: 1px solid transparent; font: 600 14px var(--font-body); padding: 9px 12px; border-radius: 7px; }
+.tab[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.panel-tool { display: flex; flex-direction: column; gap: 12px; }
+.estimate { font: 500 15px var(--font-mono); }
+.check { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--ink); }
+.check input { width: 16px; height: 16px; accent-color: var(--accent); }
+.parts { list-style: none; margin: 12px 0 0; padding: 0; border-top: 1px solid var(--line); }
+.parts li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.parts .pname { font-weight: 600; min-width: 4.5em; }
+.parts .pmeta { font: 400 13px var(--font-mono); color: var(--muted); flex: 1 1 180px; min-width: 0; }
+.parts button { padding: 7px 12px; font-size: 13px; }
+audio { width: 100%; display: block; margin-top: 12px; }
 </style>
+
 
 
 <main>
   <header>
     <h1>Video Compressor</h1>
-    <p class="lede">Make a video file smaller without visible loss. Everything runs inside this browser tab, so your video is never uploaded.</p>
+    <p class="lede">Shrink videos, pull out their audio, or cut long videos into parts for TikTok and YouTube Shorts. Everything runs inside this browser tab, so your video is never uploaded.</p>
   </header>
 
   <section class="step" aria-labelledby="s1">
@@ -128,7 +143,7 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
     <label class="drop" id="drop">
       <input type="file" id="file" accept="video/*,.mkv,.mov">
       <strong>Select a video file</strong>
-      <span>or drop one here. MP4 and MOV files compress fastest.</span>
+      <span>or drop one here. MP4 and MOV files work fastest.</span>
     </label>
     <div class="panel" id="info" hidden>
       <div class="fname" id="fname"></div>
@@ -145,31 +160,83 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
   </section>
 
   <section class="step" id="tune" aria-labelledby="s2" hidden>
-    <div class="label" id="s2">Step 2 · Pick the quality</div>
-    <div class="quality" role="radiogroup" aria-label="Quality">
-      <input type="radio" name="q" id="q-high" value="high"><label for="q-high"><b>High</b><small>Looks identical</small><span class="est" id="e-high">–</span></label>
-      <input type="radio" name="q" id="q-balanced" value="balanced" checked><label for="q-balanced"><b>Balanced</b><small>Recommended</small><span class="est" id="e-balanced">–</span></label>
-      <input type="radio" name="q" id="q-small" value="small"><label for="q-small"><b>Smallest</b><small>Slight softening</small><span class="est" id="e-small">–</span></label>
+    <div class="label" id="s2">Step 2 · Choose what to do</div>
+    <div class="tabs" role="tablist" aria-label="Tool">
+      <button class="tab" role="tab" id="tab-compress" aria-controls="panel-compress" aria-selected="true">Compress video</button>
+      <button class="tab" role="tab" id="tab-audio" aria-controls="panel-audio" aria-selected="false">Extract audio</button>
+      <button class="tab" role="tab" id="tab-split" aria-controls="panel-split" aria-selected="false">Split for Shorts &amp; TikTok</button>
     </div>
-    <div class="row">
-      <label for="maxh">Resolution</label>
-      <select id="maxh">
-        <option value="0">Keep original</option>
-        <option value="1080">Limit to 1080p</option>
-        <option value="720">Limit to 720p</option>
-        <option value="480">Limit to 480p</option>
-      </select>
-      <label for="fmt" id="fmt-label">Format</label>
-      <select id="fmt">
-        <option value="auto">Smallest file</option>
-        <option value="h264">Plays everywhere (H.264)</option>
-      </select>
+    <p class="hint" id="tabs-note" hidden>Extract audio and Split need an MP4 or MOV file.</p>
+
+    <div class="panel-tool" id="panel-compress" role="tabpanel" aria-labelledby="tab-compress">
+      <div class="quality" role="radiogroup" aria-label="Quality">
+        <input type="radio" name="q" id="q-high" value="high"><label for="q-high"><b>High</b><small>Looks identical</small><span class="est" id="e-high">–</span></label>
+        <input type="radio" name="q" id="q-balanced" value="balanced" checked><label for="q-balanced"><b>Balanced</b><small>Recommended</small><span class="est" id="e-balanced">–</span></label>
+        <input type="radio" name="q" id="q-small" value="small"><label for="q-small"><b>Smallest</b><small>Slight softening</small><span class="est" id="e-small">–</span></label>
+      </div>
+      <div class="row">
+        <label for="maxh">Resolution</label>
+        <select id="maxh">
+          <option value="0">Keep original</option>
+          <option value="1080">Limit to 1080p</option>
+          <option value="720">Limit to 720p</option>
+          <option value="480">Limit to 480p</option>
+        </select>
+        <label for="fmt" id="fmt-label">Format</label>
+        <select id="fmt">
+          <option value="auto">Smallest file</option>
+          <option value="h264">Plays everywhere (H.264)</option>
+        </select>
+        <label for="c-audio" id="c-audio-label">Audio</label>
+        <select id="c-audio">
+          <option value="copy">Keep original</option>
+          <option value="96000">Compress (96 kbps)</option>
+          <option value="64000">Compress more (64 kbps, voice)</option>
+        </select>
+      </div>
+      <p class="hint">Estimated sizes are approximate. The quality is never pushed above what the original file already has, so an already-small video shrinks less.</p>
     </div>
-    <p class="hint">Estimated sizes are approximate. The quality is never pushed above what the original file already has, so an already-small video shrinks less.</p>
+
+    <div class="panel-tool" id="panel-audio" role="tabpanel" aria-labelledby="tab-audio" hidden>
+      <div class="row">
+        <label for="a-quality">Audio quality</label>
+        <select id="a-quality">
+          <option value="copy">Original (instant, no quality loss)</option>
+          <option value="128000">Smaller (128 kbps)</option>
+          <option value="96000">Smaller still (96 kbps)</option>
+          <option value="64000">Smallest (64 kbps, voice)</option>
+        </select>
+      </div>
+      <div class="estimate" id="a-est"></div>
+      <p class="hint" id="a-hint"></p>
+    </div>
+
+    <div class="panel-tool" id="panel-split" role="tabpanel" aria-labelledby="tab-split" hidden>
+      <div class="row">
+        <label for="s-length">Part length</label>
+        <select id="s-length">
+          <option value="30">30 seconds</option>
+          <option value="60" selected>1 minute</option>
+          <option value="90">1 min 30 s</option>
+          <option value="120">2 minutes</option>
+          <option value="180">3 minutes</option>
+          <option value="600">10 minutes</option>
+        </select>
+        <label for="s-frame">Framing</label>
+        <select id="s-frame">
+          <option value="copy">Keep original (instant, no quality loss)</option>
+          <option value="crop">Vertical 9:16, crop the middle</option>
+          <option value="blur">Vertical 9:16, fit with blurred background</option>
+        </select>
+      </div>
+      <label class="check" id="s-label-row"><input type="checkbox" id="s-label" checked> Add a “Part 1/N” label at the top</label>
+      <div class="estimate" id="s-est"></div>
+      <p class="hint" id="s-hint"></p>
+    </div>
   </section>
 
   <section class="step" id="run" aria-labelledby="s3" hidden>
-    <div class="label" id="s3">Step 3 · Compress</div>
+    <div class="label" id="s3">Step 3 · Start</div>
     <div class="actions">
       <button id="go">Compress video</button>
       <button id="cancel" class="secondary" hidden>Cancel</button>
@@ -178,7 +245,7 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
       <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="barwrap"><i id="fill"></i></div>
       <div class="stats"><span id="pct">0%</span><span id="speed"></span><span id="eta"></span></div>
       <p class="hint" id="prog-hint" style="margin-top:10px"></p>
-      <div class="notice" id="hidden-warn" hidden style="margin-top:10px">This tab is in the background. Switch back to it to keep compression at full speed.</div>
+      <div class="notice" id="hidden-warn" hidden style="margin-top:10px">This tab is in the background. Switch back to it to keep working at full speed.</div>
     </div>
   </section>
 
@@ -187,20 +254,22 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
     <div class="panel">
       <div class="result-head">
         <span class="big" id="r-pct"></span>
-        <span class="sizes"><s id="r-old"></s> → <b id="r-new"></b></span>
+        <span class="sizes" id="r-sizes"><s id="r-old"></s> → <b id="r-new"></b></span>
       </div>
       <p class="hint" id="r-time" style="margin-top:6px"></p>
       <div class="notice" id="r-warn" hidden style="margin-top:12px"></div>
       <video id="r-video" controls playsinline preload="metadata"></video>
+      <audio id="r-audio" controls preload="metadata" hidden></audio>
+      <ul class="parts" id="r-parts" hidden></ul>
       <div class="actions" style="margin-top:12px">
-        <button id="save">Save compressed video</button>
+        <button id="save">Save</button>
         <button id="again" class="secondary">Try other settings</button>
       </div>
       <p class="hint" id="save-note" style="margin-top:10px"></p>
     </div>
   </section>
 
-  <p class="foot">Fast mode reads MP4 and MOV files directly and re-encodes the picture with your device's video encoder, usually many times faster than playback. The audio is copied unchanged. Other formats fall back to real-time mode, which plays the video through once and re-encodes the audio at 128 kbps. <span class="ver">Version 5 · 30 Oct 2026</span></p>
+  <p class="foot">Fast mode reads MP4 and MOV files directly and processes them with your device’s video encoder, usually many times faster than playback. Other formats can only be compressed, in real-time mode, which plays the video through once. <span class="ver">Version 6 · 1 Nov 2026</span></p>
 </main>
 
 <script src="vendor/mp4box.all.min.js"></script>
@@ -214,13 +283,13 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
   var CAP = { high: 1.0, balanced: 0.85, small: 0.65 };
   // bitrate needed for the same quality, relative to H.264
   var EFF = { avc: 1, hevc: 0.7, av1: 0.65, vp9: 0.75 };
-  var CODEC_NAME = { avc: 'H.264', hevc: 'H.265', av1: 'AV1', vp9: 'VP9' };
+  var CODEC_NAME = { avc: 'H.264', hevc: 'H.265', av1: 'AV1', vp9: 'VP9', aac: 'AAC', opus: 'Opus' };
   var AUDIO_BPS = 128000;
   var RECORDER_FORMATS = [
     'video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4',
     'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'
   ];
-  var S = { file: null, url: null, meta: null, fast: null, encoders: null, job: null, resultBlob: null, resultExt: 'mp4', resultUrl: null };
+  var S = { file: null, url: null, meta: null, fast: null, encoders: null, audioEnc: null, tool: 'compress', job: null, results: [], current: 0 };
   var downloads = null;
   try {
     if (window.claude && window.claude.use) window.claude.use('downloads').then(function (d) { downloads = d; }, function () {});
@@ -238,6 +307,7 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
     return (h ? h + ':' : '') + mm + ':' + rr;
   }
   function even(n) { return Math.max(2, Math.round(n / 2) * 2); }
+  function baseName() { return S.file.name.replace(/\.[^.]+$/, '') || 'video'; }
   function recorderFormat() {
     if (!window.MediaRecorder) return null;
     for (var i = 0; i < RECORDER_FORMATS.length; i++) if (MediaRecorder.isTypeSupported(RECORDER_FORMATS[i])) return RECORDER_FORMATS[i];
@@ -249,7 +319,7 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
     if (/^(hvc|hev|h265)/.test(codec)) return 'hevc';
     if (/^av01/.test(codec)) return 'av1';
     if (/^vp0?9/.test(codec)) return 'vp9';
-    return 'avc';
+    return null;
   }
 
   /* ---------- reading MP4/MOV ---------- */
@@ -302,6 +372,9 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
     var deg = Math.round(Math.atan2(m[1], m[0]) * 180 / Math.PI / 90) * 90;
     return ((deg % 360) + 360) % 360;
   }
+  function audioDecoderSupported(cfg) {
+    return AudioDecoder.isConfigSupported(cfg).then(function (r) { return r.supported; }, function () { return false; });
+  }
 
   // Inspect the file for fast mode. Returns null when only real-time mode can handle it.
   function analyzeFast(file) {
@@ -313,27 +386,42 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
       var vs = vtrak.samples;
       if (!vs || !vs.length) return null;
       var dur = p.info.duration / p.info.timescale;
-      var vbytes = 0;
-      for (var i = 0; i < vs.length; i++) vbytes += vs[i].size;
-      var abytes = 0;
-      if (atrak) for (var j = 0; j < atrak.samples.length; j++) abytes += atrak.samples[j].size;
+      var vts = vtrak.mdia.mdhd.timescale, vshift = editShift(vtrak, p.info.timescale);
+      var vbytes = 0, keys = [], keyPts = [];
+      for (var i = 0; i < vs.length; i++) {
+        vbytes += vs[i].size;
+        if (vs[i].is_sync) { keys.push(i); keyPts.push(Math.round((vs[i].cts - vshift) * 1e6 / vts)); }
+      }
       var fast = {
-        iso: p.iso, vt: vt, vtrak: vtrak, at: null, atrak: null, dur: dur,
+        iso: p.iso, vt: vt, vtrak: vtrak, at: null, atrak: null, dur: dur, keys: keys, keyPts: keyPts,
         w: vt.video.width, h: vt.video.height, fps: vs.length / (vt.duration / vt.timescale || dur),
-        srcKind: codecKind(vt.codec), srcVideoBps: vbytes * 8 / dur, audioBytes: 0,
+        srcKind: codecKind(vt.codec) || 'avc', copyable: !!codecKind(vt.codec), srcVideoBps: vbytes * 8 / dur, audioBytes: 0,
         rotation: rotationOf(vt), movieTimescale: p.info.timescale,
         decoderConfig: { codec: vt.codec, codedWidth: vt.video.width, codedHeight: vt.video.height, description: videoDescription(vtrak) }
       };
-      if (at) {
-        if (!/^mp4a\.40/.test(at.codec)) return { unsupportedAudio: at.codec };
+      return VideoDecoder.isConfigSupported(fast.decoderConfig).then(function (r) { return r.supported; }, function () { return false; }).then(function (ok) {
+        if (!ok) return null;
+        if (!at) return fast;
+        var abytes = 0;
+        for (var j = 0; j < atrak.samples.length; j++) abytes += atrak.samples[j].size;
         fast.at = at; fast.atrak = atrak; fast.audioBytes = abytes;
-        fast.audioConfig = { codec: at.codec, sampleRate: at.audio.sample_rate, numberOfChannels: at.audio.channel_count, description: aacDescription(atrak) };
-      }
-      return VideoDecoder.isConfigSupported(fast.decoderConfig).then(function (r) { return r.supported ? fast : null; }, function () { return null; });
+        fast.audioCopyable = /^mp4a\.40/.test(at.codec);
+        fast.audioConfig = { codec: at.codec, sampleRate: at.audio.sample_rate, numberOfChannels: at.audio.channel_count, description: fast.audioCopyable ? aacDescription(atrak) : undefined };
+        if (fast.audioCopyable) return fast;
+        // Other audio (e.g. MP3) can still be used if the browser decodes it; it is then re-encoded.
+        return audioDecoderSupported(fast.audioConfig).then(function (ok2) {
+          if (ok2) return fast;
+          var alt = { codec: 'mp3', sampleRate: fast.audioConfig.sampleRate, numberOfChannels: fast.audioConfig.numberOfChannels };
+          return /^mp4a\.(6b|69)/i.test(at.codec) ? audioDecoderSupported(alt).then(function (ok3) {
+            if (ok3) { fast.audioConfig = alt; return fast; }
+            return { unsupportedAudio: at.codec };
+          }) : { unsupportedAudio: at.codec };
+        });
+      });
     }).catch(function () { return null; });
   }
 
-  /* ---------- choosing an encoder ---------- */
+  /* ---------- choosing encoders ---------- */
 
   function encoderCandidates(w, h, fps) {
     var big = w * h > 1920 * 1088, fast = w * h * fps > 1920 * 1088 * 31;
@@ -375,6 +463,18 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
     if (!S.fast || !S.encoders) return null;
     return ($('fmt').value === 'h264' ? S.encoders.h264 : S.encoders.auto) || S.encoders.auto || S.encoders.h264;
   }
+  // AAC where Chrome can encode it (plays everywhere), otherwise Opus.
+  function pickAudioEncoder(sampleRate, channels) {
+    if (!window.AudioEncoder || channels > 2) return Promise.resolve(null);
+    var opts = [{ kind: 'aac', codec: 'mp4a.40.2' }, { kind: 'opus', codec: 'opus' }];
+    return opts.reduce(function (p, o) {
+      return p.then(function (got) {
+        if (got) return got;
+        return AudioEncoder.isConfigSupported({ codec: o.codec, sampleRate: sampleRate, numberOfChannels: channels, bitrate: 96000 })
+          .then(function (r) { return r.supported ? { kind: o.kind, codec: o.codec, sampleRate: sampleRate, channels: channels } : null; }, function () { return null; });
+      });
+    }, Promise.resolve(null));
+  }
 
   /* ---------- sizes and bitrates ---------- */
 
@@ -398,17 +498,103 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
     }
     return Math.max(100000, Math.round(v));
   }
-  function estimateBytes(preset) {
-    var dims = targetSize(+$('maxh').value), m = S.meta;
-    var audio = S.fast ? S.fast.audioBytes : AUDIO_BPS * m.duration / 8;
-    return bitrateFor(preset, dims) * m.duration / 8 + audio;
+  // How the compress tool treats audio: null (no audio), copy, or re-encode at a bitrate.
+  function compressAudioPlan() {
+    var F = S.fast;
+    if (!F || !F.atrak) return null;
+    var sel = $('c-audio').value;
+    if (sel === 'copy' && F.audioCopyable) return { mode: 'copy' };
+    if (!S.audioEnc) return null;
+    return { mode: 'encode', enc: S.audioEnc, bitrate: sel === 'copy' ? AUDIO_BPS : +sel };
   }
+  function audioPlanBytes(plan) {
+    if (!plan) return S.fast ? 0 : AUDIO_BPS * S.meta.duration / 8;
+    return plan.mode === 'copy' ? S.fast.audioBytes : plan.bitrate * S.meta.duration / 8;
+  }
+  function estimateBytes(preset) {
+    var dims = targetSize(+$('maxh').value);
+    return bitrateFor(preset, dims) * S.meta.duration / 8 + audioPlanBytes(compressAudioPlan());
+  }
+  function extractPlan() {
+    var F = S.fast, sel = $('a-quality').value;
+    if (sel === 'copy' && F.audioCopyable) return { mode: 'copy' };
+    if (!S.audioEnc) return null;
+    return { mode: 'encode', enc: S.audioEnc, bitrate: sel === 'copy' ? 192000 : +sel };
+  }
+  function audioExt() { return downloads ? 'mp4' : 'm4a'; }
+
+  // Where each part starts and ends. Keyframe-aligned parts can be copied without re-encoding;
+  // each one stays within the chosen length.
+  function splitPlan(L, keyAligned) {
+    var F = S.fast, durUs = F.dur * 1e6, segs = [], s = 0, minLen = 1e6;
+    if (!keyAligned) {
+      for (s = 0; s < durUs - 0.5e6; s += L) segs.push({ start: s, end: Math.min(s + L, durUs) });
+      return segs;
+    }
+    var kp = F.keyPts;
+    for (;;) {
+      var target = s + L;
+      if (target >= durUs - 0.5e6) { segs.push({ start: s, end: durUs }); break; }
+      var best = -1, k;
+      for (k = 0; k < kp.length && kp[k] <= target; k++) if (kp[k] >= s + minLen) best = kp[k];
+      if (best < 0) {
+        for (k = 0; k < kp.length; k++) if (kp[k] >= s + minLen) { best = kp[k]; break; }
+        if (best < 0) { segs.push({ start: s, end: durUs }); break; }
+      }
+      segs.push({ start: s, end: best });
+      s = best;
+    }
+    return segs;
+  }
+  function verticalSize() {
+    var F = S.fast, dispH = F.rotation % 180 ? F.w : F.h;
+    return dispH >= 1080 ? { w: 1080, h: 1920 } : { w: 720, h: 1280 };
+  }
+
   function refreshEstimates() {
     if (!S.meta) return;
     ['high', 'balanced', 'small'].forEach(function (p) {
       $('e-' + p).textContent = '≈ ' + fmtSize(Math.min(estimateBytes(p), S.file.size));
     });
+    var F = S.fast;
+    if (F) {
+      var showAudio = !!F.atrak && (!!S.audioEnc || !F.audioCopyable);
+      $('c-audio').hidden = $('c-audio-label').hidden = !showAudio || !S.audioEnc;
+      if (!F.audioCopyable) $('c-audio').querySelector('option[value=copy]').textContent = 'Re-encode (128 kbps)';
+
+      // extract audio
+      if (!F.atrak) {
+        $('a-est').textContent = 'This video has no audio track.';
+        $('a-hint').textContent = '';
+      } else {
+        var ep = extractPlan();
+        $('a-quality').querySelectorAll('option').forEach(function (o) { if (o.value !== 'copy') o.disabled = !S.audioEnc; });
+        if (ep) {
+          $('a-est').textContent = '≈ ' + fmtSize(ep.mode === 'copy' ? F.audioBytes : ep.bitrate * F.dur / 8) + ', saved as .' + audioExt();
+          $('a-hint').textContent = ep.mode === 'copy'
+            ? 'The audio is copied exactly as it is in the video (AAC), so it plays on any phone or computer.'
+            : 'Re-encoded as ' + CODEC_NAME[ep.enc.kind] + (ep.enc.kind === 'opus' ? '. Opus plays in Chrome, VLC, Android and Windows; for iPhone and older players keep “Original”.' : '.');
+        } else {
+          $('a-est').textContent = 'This browser can’t re-encode audio. Choose “Original”.';
+          $('a-hint').textContent = '';
+        }
+      }
+
+      // split
+      var L = +$('s-length').value * 1e6, framing = $('s-frame').value;
+      var copy = framing === 'copy' && F.copyable;
+      var plan = splitPlan(L, copy);
+      var longest = plan.reduce(function (m, p) { return Math.max(m, p.end - p.start); }, 0);
+      $('s-label-row').hidden = framing === 'copy';
+      var total = copy ? S.file.size : (Math.min(0.07 * verticalSize().w * verticalSize().h * F.fps, 8e6) * F.dur / 8 + (F.atrak ? F.audioBytes : 0));
+      $('s-est').textContent = plan.length + (plan.length === 1 ? ' part' : ' parts') + ' of up to ' + fmtTime(longest / 1e6) + ' · about ' + fmtSize(total) + ' in total';
+      $('s-hint').textContent = (copy
+        ? 'Parts are cut at the video’s keyframes, so they can be slightly shorter than the chosen length but never longer.'
+        : 'Each part is re-encoded as a ' + verticalSize().w + '×' + verticalSize().h + ' H.264 MP4, ready to upload.') +
+        ' YouTube Shorts allows up to 3 minutes, TikTok up to 10.';
+    }
     refreshMode();
+    refreshAction();
   }
   function refreshMode() {
     var chip = $('mode-chip'), txt = $('mode-text');
@@ -416,13 +602,35 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
       var e = currentEncoder();
       chip.className = 'chip';
       chip.textContent = 'Fast mode';
-      txt.textContent = 'Output: ' + CODEC_NAME[e.kind] + ' MP4, ' + (e.hardware ? 'using your device’s hardware encoder.' : 'using the browser’s software encoder.') + ' Audio is copied unchanged.' +
+      txt.textContent = 'Compressed video: ' + CODEC_NAME[e.kind] + ' MP4, ' + (e.hardware ? 'using your device’s hardware encoder.' : 'using the browser’s software encoder.') +
         (e.kind === 'avc' ? '' : ' ' + CODEC_NAME[e.kind] + ' plays in Chrome, VLC, Android and recent Windows and Mac. Choose H.264 for older devices.');
     } else {
       chip.className = 'chip slow';
       chip.textContent = 'Real-time mode';
-      txt.textContent = S.slowReason + ' Expect it to take about ' + fmtTime(S.meta.duration) + '.';
+      txt.textContent = S.slowReason + ' Compressing will take about ' + fmtTime(S.meta.duration) + '.';
     }
+  }
+  function refreshAction() {
+    var go = $('go');
+    if (S.tool === 'audio') {
+      go.textContent = 'Extract audio';
+      go.disabled = !!S.job || !S.fast || !S.fast.atrak || !extractPlan();
+    } else if (S.tool === 'split') {
+      var n = S.fast ? splitPlan(+$('s-length').value * 1e6, $('s-frame').value === 'copy' && S.fast.copyable).length : 0;
+      go.textContent = 'Split into ' + n + (n === 1 ? ' part' : ' parts');
+      go.disabled = !!S.job || !S.fast;
+    } else {
+      go.textContent = 'Compress video';
+      go.disabled = !!S.job;
+    }
+  }
+  function selectTool(tool) {
+    S.tool = tool;
+    ['compress', 'audio', 'split'].forEach(function (t) {
+      $('tab-' + t).setAttribute('aria-selected', t === tool ? 'true' : 'false');
+      $('panel-' + t).hidden = t !== tool;
+    });
+    refreshAction();
   }
 
   /* ---------- file selection ---------- */
@@ -460,11 +668,16 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
     });
   }
 
+  function clearResults() {
+    S.results.forEach(function (r) { if (r.url) URL.revokeObjectURL(r.url); });
+    S.results = []; S.current = 0;
+    $('r-video').removeAttribute('src'); $('r-audio').removeAttribute('src');
+    $('r-parts').textContent = '';
+  }
   function reset() {
     if (S.url) URL.revokeObjectURL(S.url);
-    if (S.resultUrl) URL.revokeObjectURL(S.resultUrl);
-    S.url = S.resultUrl = S.resultBlob = null; S.meta = S.fast = S.encoders = null;
-    $('r-video').removeAttribute('src');
+    clearResults();
+    S.url = null; S.meta = S.fast = S.encoders = S.audioEnc = null;
     ['info', 'tune', 'run', 'result', 'prog'].forEach(function (id) { $(id).hidden = true; });
   }
 
@@ -478,14 +691,19 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
 
     analyzeFast(file).then(function (fast) {
       if (fast && !fast.unsupportedAudio) {
-        return pickEncoders(even(fast.w), even(fast.h), fast.fps).then(function (enc) {
+        return Promise.all([
+          pickEncoders(even(fast.w), even(fast.h), fast.fps),
+          fast.at ? pickAudioEncoder(fast.audioConfig.sampleRate, fast.audioConfig.numberOfChannels) : null
+        ]).then(function (r) {
+          var enc = r[0];
           if (!enc.auto) { S.slowReason = 'This device has no fast video encoder available.'; return null; }
-          S.encoders = enc;
+          if (fast.at && !fast.audioCopyable && !r[1]) { S.slowReason = 'This browser can’t convert this file’s audio.'; return null; }
+          S.encoders = enc; S.audioEnc = r[1];
           return fast;
         });
       }
       S.slowReason = fast && fast.unsupportedAudio
-        ? 'Fast mode can’t copy this file’s audio format (' + fast.unsupportedAudio + ').'
+        ? 'Fast mode can’t read this file’s audio format (' + fast.unsupportedAudio + ').'
         : /\.(mp4|mov|m4v)$/i.test(file.name)
           ? 'Fast mode can’t decode this file’s video format on this device.'
           : 'Fast mode works with MP4 and MOV files only.';
@@ -512,14 +730,17 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
       $('i-fps').textContent = (Math.abs(m.fps - Math.round(m.fps)) < 0.05 ? Math.round(m.fps) : m.fps.toFixed(2)) + ' fps';
       var showFmt = !!(S.fast && S.encoders.auto && S.encoders.h264 && S.encoders.auto !== S.encoders.h264);
       $('fmt').hidden = $('fmt-label').hidden = !showFmt;
+      $('tab-audio').disabled = $('tab-split').disabled = !S.fast;
+      $('tabs-note').hidden = !!S.fast;
+      if (!S.fast) selectTool('compress');
+      if (!S.fast) { $('c-audio').hidden = $('c-audio-label').hidden = true; }
       refreshEstimates();
       ['info', 'tune', 'run'].forEach(function (id) { $(id).hidden = false; });
     }).catch(function (e) {
       $('reading').hidden = true;
-      var keepName = S.file;
       reset();
       showError(e && e.message === 'norecorder'
-        ? 'This browser can’t compress this file. Open the page in a current version of Chrome, or convert the video to MP4 first.'
+        ? 'This browser can’t process this file. Open the page in a current version of Chrome, or convert the video to MP4 first.'
         : 'This browser can’t read that file. Try an MP4, MOV or WebM video.');
     });
   }
@@ -527,24 +748,28 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
   /* ---------- shared job UI ---------- */
 
   var wakeLock = null;
-  function beginJob(hint) {
-    $('go').disabled = true; $('cancel').hidden = false; $('prog').hidden = false; $('result').hidden = true;
+  function beginJob(hint, onCancel) {
+    S.job = { cancelled: false, cancel: onCancel || null };
+    $('cancel').hidden = false; $('prog').hidden = false; $('result').hidden = true;
     $('tune').style.opacity = .5; $('tune').style.pointerEvents = 'none';
     $('prog-hint').textContent = hint;
     $('speed').textContent = '';
     showError('');
     setProgress(0, 0, 0);
+    refreshAction();
     document.addEventListener('visibilitychange', onVis);
     try { navigator.wakeLock && navigator.wakeLock.request('screen').then(function (l) { wakeLock = l; }, function () {}); } catch (e) {}
+    return S.job;
   }
   function endJob() {
     S.job = null;
-    $('go').disabled = false; $('cancel').hidden = true;
+    $('cancel').hidden = true;
     $('tune').style.opacity = ''; $('tune').style.pointerEvents = '';
     $('hidden-warn').hidden = true;
     document.removeEventListener('visibilitychange', onVis);
     try { if (wakeLock) wakeLock.release(); } catch (e) {}
     wakeLock = null;
+    refreshAction();
   }
   function onVis() { $('hidden-warn').hidden = !document.hidden; }
   function setProgress(p, elapsed, mediaDone) {
@@ -555,12 +780,15 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
     $('eta').textContent = p > 0.01 && elapsed > 2 ? 'about ' + fmtTime(elapsed / p - elapsed) + ' left' : 'starting…';
     if (mediaDone && elapsed > 2) $('speed').textContent = (mediaDone / elapsed).toFixed(1) + '× real time';
   }
-
-  function compress() {
-    if (S.fast) compressFast(); else compressRealtime();
+  function jobFailed(job, e, prefix) {
+    endJob();
+    $('prog').hidden = true;
+    if (job.cancelled) return;
+    console.error(e);
+    showError(prefix + ' (' + ((e && e.message) || 'encoder error') + ').');
   }
 
-  /* ---------- fast mode: WebCodecs ---------- */
+  /* ---------- fast engine: read, (re-)encode and write MP4 with WebCodecs ---------- */
 
   function readSamples(file, samples) {
     var start = samples[0].offset, end = start;
@@ -579,7 +807,7 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
   }
 
   // Collects the muxer's output as Blobs (Chrome keeps large Blobs on disk, not in memory).
-  function BlobSink() {
+  function BlobSink(type) {
     var parts = [], patches = [], end = 0;
     this.onData = function (data, pos) {
       if (pos > end) { parts.push(new Blob([new Uint8Array(pos - end)])); end = pos; }
@@ -588,68 +816,171 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
       if (overlap < data.byteLength) { parts.push(new Blob([data.slice(overlap)])); end += data.byteLength - overlap; }
     };
     this.toBlob = function () {
-      var blob = new Blob(parts, { type: 'video/mp4' });
+      var blob = new Blob(parts, { type: type });
       patches.forEach(function (p) {
-        blob = new Blob([blob.slice(0, p.pos), p.blob, blob.slice(p.pos + p.blob.size)], { type: 'video/mp4' });
+        blob = new Blob([blob.slice(0, p.pos), p.blob, blob.slice(p.pos + p.blob.size)], { type: type });
       });
       return blob;
     };
   }
 
-  function compressFast() {
-    var F = S.fast, enc = currentEncoder();
-    var preset = document.querySelector('input[name=q]:checked').value;
-    var dims = targetSize(+$('maxh').value);
-    var vbps = bitrateFor(preset, dims);
-    var fps = F.fps, gop = Math.max(1, Math.round(fps * 5));
+  // Adds an edit list to the video track so it starts playing at its first frame. Copied video with
+  // B-frames begins with a decode delay; without this the picture would lag the sound by that delay.
+  // The muxer writes the index (moov) last, so growing it moves no media data.
+  function addEditList(blob, mediaUs) {
+    function head(off) {
+      return blob.slice(off, off + 16).arrayBuffer().then(function (b) {
+        var d = new DataView(b), size = d.getUint32(0);
+        var type = String.fromCharCode(d.getUint8(4), d.getUint8(5), d.getUint8(6), d.getUint8(7));
+        if (size === 1) size = d.getUint32(8) * 4294967296 + d.getUint32(12);
+        if (size === 0) size = blob.size - off;
+        return { size: size, type: type };
+      });
+    }
+    function findMoov(off) {
+      if (off >= blob.size) return Promise.resolve(null);
+      return head(off).then(function (h) { return h.type === 'moov' ? { off: off, size: h.size } : findMoov(off + h.size); });
+    }
+    return findMoov(0).then(function (m) {
+      if (!m || m.off + m.size !== blob.size) return blob;
+      return blob.slice(m.off).arrayBuffer().then(function (buf) {
+        var d = new DataView(buf), u8 = new Uint8Array(buf);
+        function type(o) { return String.fromCharCode(u8[o + 4], u8[o + 5], u8[o + 6], u8[o + 7]); }
+        function kids(o, size) {
+          var out = [], p = o + 8;
+          while (p + 8 <= o + size) { var sz = d.getUint32(p); if (sz < 8) break; out.push({ o: p, s: sz, t: type(p) }); p += sz; }
+          return out;
+        }
+        function find(list, t) { for (var i = 0; i < list.length; i++) if (list[i].t === t) return list[i]; return null; }
+        var top = kids(0, buf.byteLength), mvhd = find(top, 'mvhd');
+        var movieTs = d.getUint32(mvhd.o + (u8[mvhd.o + 8] ? 28 : 20));
+        for (var i = 0; i < top.length; i++) {
+          if (top[i].t !== 'trak') continue;
+          var trak = top[i], tk = kids(trak.o, trak.s), mdia = find(tk, 'mdia'), tkhd = find(tk, 'tkhd');
+          if (!mdia || !tkhd || find(tk, 'edts')) continue;
+          var mk = kids(mdia.o, mdia.s), hdlr = find(mk, 'hdlr'), mdhd = find(mk, 'mdhd');
+          if (!hdlr || !mdhd || type(hdlr.o + 12) !== 'vide') continue;   // handler_type sits 16 bytes in
+          var mediaTs = d.getUint32(mdhd.o + (u8[mdhd.o + 8] ? 28 : 20));
+          var tkDur = u8[tkhd.o + 8] ? d.getUint32(tkhd.o + 36) * 4294967296 + d.getUint32(tkhd.o + 40) : d.getUint32(tkhd.o + 28);
+          var edts = new DataView(new ArrayBuffer(36));
+          edts.setUint32(0, 36); edts.setUint32(4, 0x65647473);   // 'edts'
+          edts.setUint32(8, 28); edts.setUint32(12, 0x656c7374);  // 'elst', version 0
+          edts.setUint32(16, 0); edts.setUint32(20, 1);
+          edts.setUint32(24, Math.max(0, tkDur - Math.round(mediaUs * movieTs / 1e6)));
+          edts.setInt32(28, Math.round(mediaUs * mediaTs / 1e6));
+          edts.setUint32(32, 0x00010000);
+          var at = tkhd.o + tkhd.s, out = new Uint8Array(buf.byteLength + 36);
+          out.set(u8.subarray(0, at), 0);
+          out.set(new Uint8Array(edts.buffer), at);
+          out.set(u8.subarray(at), at + 36);
+          var od = new DataView(out.buffer);
+          od.setUint32(0, buf.byteLength + 36);
+          od.setUint32(trak.o, trak.s + 36);
+          return new Blob([blob.slice(0, m.off), out], { type: blob.type });
+        }
+        return blob;
+      });
+    });
+  }
+
+  /*
+   * Writes one MP4 from the part of the source between o.start and o.end (microseconds).
+   * o.video: null (audio only), { mode: 'copy', rotation }, or
+   *          { mode: 'encode', enc, dims, vbps, rotation, draw(ctx, frame, w, h) }.
+   * o.audio: null, { mode: 'copy' }, or { mode: 'encode', enc, bitrate }.
+   * o.onProgress(fraction, mediaSecondsDone); o.onBatch(stats) may throw to stop; o.job.cancelled stops.
+   */
+  function transcode(o) {
+    var F = S.fast, file = S.file;
     var vtrak = F.vtrak, vs = vtrak.samples, vts = vtrak.mdia.mdhd.timescale, vshift = editShift(vtrak, F.movieTimescale);
     var as = F.atrak ? F.atrak.samples : [], ats = F.atrak ? F.atrak.mdia.mdhd.timescale : 1, ashift = F.atrak ? editShift(F.atrak, F.movieTimescale) : 0;
-    var scale = dims.w !== F.w || dims.h !== F.h;
-    var canvas = scale ? new OffscreenCanvas(dims.w, dims.h) : null, ctx = canvas && canvas.getContext('2d');
-    var sink = new BlobSink(), started = performance.now();
-    var failure = null, cancelled = false, framesIn = 0, framesOut = 0, lastVideoUs = 0, firstVideoUs = -1, videoBytes = 0, ai = 0, audioMetaSent = false;
-    var decoder, encoder;
+    var start = o.start || 0, end = o.end == null ? Infinity : o.end, span = end - start;
+    var V = o.video, A = F.atrak ? o.audio : null;
+    function vPts(s) { return Math.round((s.cts - vshift) * 1e6 / vts); }
+    function aPts(s) { return Math.round((s.cts - ashift) * 1e6 / ats); }
 
-    S.job = { cancel: function () { cancelled = true; } };
-    beginJob('Keep this tab open until it finishes. Your device can be used for other things meanwhile.');
+    // video samples to read: from the keyframe at or before start, up to the keyframe at or after end
+    var i0 = 0, i1 = vs.length, k;
+    if (V) {
+      for (k = 0; k < F.keys.length && F.keyPts[k] <= start; k++) i0 = F.keys[k];
+      if (end !== Infinity) for (k = 0; k < F.keys.length; k++) if (F.keyPts[k] >= end) { i1 = F.keys[k]; break; }
+    }
+    var a0 = 0, a1 = as.length;
+    while (a0 < as.length && aPts(as[a0]) < start) a0++;
+    if (end !== Infinity) { a1 = a0; while (a1 < as.length && aPts(as[a1]) < end) a1++; }
 
-    var muxer = new Mp4Muxer.Muxer({
+    var sink = new BlobSink(V ? 'video/mp4' : 'audio/mp4');
+    var failure = null, started = performance.now();
+    var framesIn = 0, framesOut = 0, lastVideoUs = 0, firstVideoUs = -1, videoBytes = 0, videoMetaSent = false, audioMetaSent = false, ai = a0, firstCtoUs = 0;
+    var decoder = null, encoder = null, adec = null, aenc = null;
+
+    var muxOpts = {
       target: new Mp4Muxer.StreamTarget({ onData: sink.onData, chunked: true, chunkSize: 8 * 1048576 }),
       fastStart: false,
-      firstTimestampBehavior: 'offset',
-      video: { codec: enc.kind, width: dims.w, height: dims.h, rotation: F.rotation },
-      audio: F.at ? { codec: 'aac', numberOfChannels: F.audioConfig.numberOfChannels, sampleRate: F.audioConfig.sampleRate } : undefined
-    });
+      firstTimestampBehavior: 'cross-track-offset'
+    };
+    if (V) muxOpts.video = V.mode === 'copy'
+      ? { codec: F.srcKind, width: F.w, height: F.h, rotation: V.rotation || 0 }
+      : { codec: V.enc.kind, width: V.dims.w, height: V.dims.h, rotation: V.rotation || 0 };
+    if (A) muxOpts.audio = A.mode === 'copy'
+      ? { codec: 'aac', numberOfChannels: F.audioConfig.numberOfChannels, sampleRate: F.audioConfig.sampleRate }
+      : { codec: A.enc.kind, numberOfChannels: A.enc.channels, sampleRate: A.enc.sampleRate };
+    var muxer = new Mp4Muxer.Muxer(muxOpts);
 
-    encoder = new VideoEncoder({
-      output: function (chunk, meta) {
-        try { muxer.addVideoChunk(chunk, meta); } catch (e) { failure = failure || e; }
-        framesOut++; lastVideoUs = chunk.timestamp; videoBytes += chunk.byteLength;
-        if (firstVideoUs < 0) firstVideoUs = chunk.timestamp;
-      },
-      error: function (e) { failure = failure || e; }
-    });
-    encoder.configure(encoderConfig(enc.kind, enc.codec, dims.w, dims.h, fps, vbps, enc.hw));
+    if (V && V.mode === 'encode') {
+      var W = V.dims.w, H = V.dims.h, gop = Math.max(1, Math.round(F.fps * 5));
+      var canvas = (V.draw || W !== F.w || H !== F.h) ? new OffscreenCanvas(W, H) : null, ctx = canvas && canvas.getContext('2d');
+      encoder = new VideoEncoder({
+        output: function (chunk, meta) {
+          try { muxer.addVideoChunk(chunk, meta); } catch (e) { failure = failure || e; }
+          framesOut++; lastVideoUs = chunk.timestamp; videoBytes += chunk.byteLength;
+          if (firstVideoUs < 0) firstVideoUs = chunk.timestamp;
+        },
+        error: function (e) { failure = failure || e; }
+      });
+      encoder.configure(encoderConfig(V.enc.kind, V.enc.codec, W, H, F.fps, V.vbps, V.enc.hw));
+      decoder = new VideoDecoder({
+        output: function (frame) {
+          var ts = frame.timestamp;
+          if (ts < 0 || ts >= span || failure || o.job.cancelled || encoder.state !== 'configured') { frame.close(); return; }
+          var f = frame;
+          if (canvas) {
+            if (V.draw) V.draw(ctx, frame, W, H); else ctx.drawImage(frame, 0, 0, W, H);
+            f = new VideoFrame(canvas, { timestamp: ts, duration: frame.duration || undefined });
+            frame.close();
+          }
+          try { encoder.encode(f, { keyFrame: framesIn % gop === 0 }); } catch (e) { failure = failure || e; }
+          f.close();
+          framesIn++;
+        },
+        error: function (e) { failure = failure || e; }
+      });
+      decoder.configure(F.decoderConfig);
+    }
 
-    decoder = new VideoDecoder({
-      output: function (frame) {
-        if (frame.timestamp < 0 || failure || cancelled || encoder.state !== 'configured') { frame.close(); return; }
-        var f = frame;
-        if (scale) {
-          ctx.drawImage(frame, 0, 0, dims.w, dims.h);
-          f = new VideoFrame(canvas, { timestamp: frame.timestamp, duration: frame.duration || undefined });
-          frame.close();
-        }
-        try { encoder.encode(f, { keyFrame: framesIn % gop === 0 }); } catch (e) { failure = failure || e; }
-        f.close();
-        framesIn++;
-      },
-      error: function (e) { failure = failure || e; }
-    });
-    decoder.configure(F.decoderConfig);
+    if (A && A.mode === 'encode') {
+      aenc = new AudioEncoder({
+        output: function (chunk, meta) { try { muxer.addAudioChunk(chunk, meta); } catch (e) { failure = failure || e; } },
+        error: function (e) { failure = failure || e; }
+      });
+      aenc.configure({ codec: A.enc.codec, sampleRate: A.enc.sampleRate, numberOfChannels: A.enc.channels, bitrate: A.bitrate });
+      adec = new AudioDecoder({
+        output: function (data) {
+          if (failure || aenc.state !== 'configured') { data.close(); return; }
+          try { aenc.encode(data); } catch (e) { failure = failure || e; }
+          data.close();
+        },
+        error: function (e) { failure = failure || e; }
+      });
+      adec.configure(F.audioConfig);
+    }
 
+    function check() {
+      if (o.job.cancelled) throw new Error('cancelled');
+      if (failure) throw failure;
+    }
     // Chrome before 106 has no 'dequeue' events on the codecs, so it waits on a short timer instead.
-    var hasDequeue = typeof decoder.addEventListener === 'function' && typeof encoder.addEventListener === 'function';
+    var hasDequeue = !decoder || (typeof decoder.addEventListener === 'function' && typeof encoder.addEventListener === 'function');
     function waitQueues() {
       if (!hasDequeue) return new Promise(function (resolve) { setTimeout(resolve, 4); });
       return new Promise(function (resolve) {
@@ -663,93 +994,248 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
         setTimeout(go, 50);
       });
     }
-    function audioTs(s) { return Math.round((s.cts - ashift) * 1e6 / ats); }
-    // Copies audio samples up to `untilUs` into the output, keeping it interleaved with the video.
-    function pumpAudio(untilUs) {
-      if (ai >= as.length) return Promise.resolve();
-      var batch = [];
-      while (ai < as.length && batch.length < 400 && audioTs(as[ai]) <= untilUs) batch.push(as[ai++]);
-      if (!batch.length) return Promise.resolve();
-      return readSamples(S.file, batch).then(function (datas) {
-        for (var k = 0; k < batch.length; k++) {
-          var ts = audioTs(batch[k]);
-          if (ts < 0) continue;
-          var meta;
-          if (!audioMetaSent) { meta = { decoderConfig: F.audioConfig }; audioMetaSent = true; }
-          muxer.addAudioChunkRaw(datas[k], 'key', ts, Math.round(batch[k].duration * 1e6 / ats), meta);
-        }
-        return pumpAudio(untilUs);
-      });
-    }
-
-    var BATCH = 90, i = 0, noGain = 0;
-    function check() {
-      if (cancelled) throw new Error('cancelled');
-      if (failure) throw failure;
-    }
-    function step() {
+    function drainVideo() {
       check();
-      if (i >= vs.length) return Promise.resolve();
-      var batch = vs.slice(i, i + BATCH);
-      i += batch.length;
-      return readSamples(S.file, batch).then(function (datas) {
+      if (decoder.decodeQueueSize > 45 || encoder.encodeQueueSize > 20) return waitQueues().then(drainVideo);
+    }
+    function drainAudio() {
+      check();
+      if (adec && (adec.decodeQueueSize > 60 || aenc.encodeQueueSize > 60)) return new Promise(function (r) { setTimeout(r, 4); }).then(drainAudio);
+    }
+    // Copies or re-encodes audio samples up to `untilUs` (source time), interleaved with the video.
+    function pumpAudio(untilUs) {
+      if (!A || ai >= a1) return Promise.resolve();
+      var batch = [];
+      while (ai < a1 && batch.length < 400 && aPts(as[ai]) <= untilUs) batch.push(as[ai++]);
+      if (!batch.length) return Promise.resolve();
+      return readSamples(file, batch).then(function (datas) {
         check();
-        for (var k = 0; k < batch.length; k++) {
-          var s = batch[k];
-          decoder.decode(new EncodedVideoChunk({
-            type: s.is_sync ? 'key' : 'delta',
-            timestamp: Math.round((s.cts - vshift) * 1e6 / vts),
-            duration: Math.round(s.duration * 1e6 / vts),
-            data: datas[k]
-          }));
+        for (var j = 0; j < batch.length; j++) {
+          var ts = aPts(batch[j]) - start, dur = Math.round(batch[j].duration * 1e6 / ats);
+          if (ts < 0) continue;
+          if (A.mode === 'copy') {
+            var meta;
+            if (!audioMetaSent) { meta = { decoderConfig: F.audioConfig }; audioMetaSent = true; }
+            muxer.addAudioChunkRaw(datas[j], 'key', ts, dur, meta);
+          } else {
+            adec.decode(new EncodedAudioChunk({ type: 'key', timestamp: ts, duration: dur, data: datas[j] }));
+          }
         }
-        return (function drain() {
-          check();
-          if (decoder.decodeQueueSize > 45 || encoder.encodeQueueSize > 20) return waitQueues().then(drain);
-        })();
-      }).then(function () {
-        return pumpAudio(lastVideoUs + 1e6);
-      }).then(function () {
-        // Stop early when the output is on course to be no smaller than the original.
-        var doneUs = lastVideoUs - Math.max(0, firstVideoUs);
-        if (doneUs > Math.max(60e6, F.dur * 1e6 * 0.04)) {
-          var projected = videoBytes * F.dur * 1e6 / doneUs + F.audioBytes;
-          if (projected > S.file.size * 0.97) { noGain = projected; throw new Error('no gain'); }
-        }
-        var elapsed = (performance.now() - started) / 1000;
-        setProgress(Math.min(0.99, i / vs.length), elapsed, lastVideoUs / 1e6);
-        return step();
-      });
+        return drainAudio();
+      }).then(function () { return pumpAudio(untilUs); });
     }
 
-    step().then(function () {
-      return decoder.flush();
+    var BATCH = 90, i = i0;
+    function report(frac, mediaUs) {
+      if (o.onProgress) o.onProgress(Math.min(0.99, frac), mediaUs / 1e6, (performance.now() - started) / 1000);
+    }
+    function videoStep() {
+      check();
+      if (i >= i1) return Promise.resolve();
+      var batch = vs.slice(i, Math.min(i + BATCH, i1));
+      i += batch.length;
+      return readSamples(file, batch).then(function (datas) {
+        check();
+        for (var j = 0; j < batch.length; j++) {
+          var s = batch[j], pts = vPts(s) - start, dur = Math.round(s.duration * 1e6 / vts);
+          if (V.mode === 'copy') {
+            if (pts < 0) continue;
+            var meta;
+            var cto = Math.round((s.cts - s.dts) * 1e6 / vts);
+            if (!videoMetaSent) {
+              meta = { decoderConfig: { codec: F.vt.codec, codedWidth: F.w, codedHeight: F.h, description: F.decoderConfig.description } };
+              videoMetaSent = true; firstCtoUs = cto;
+            }
+            muxer.addVideoChunkRaw(datas[j], s.is_sync ? 'key' : 'delta', pts, dur, meta, cto);
+            framesOut++; videoBytes += s.size; lastVideoUs = pts;
+            if (firstVideoUs < 0) firstVideoUs = pts;
+          } else {
+            decoder.decode(new EncodedVideoChunk({ type: s.is_sync ? 'key' : 'delta', timestamp: pts, duration: dur, data: datas[j] }));
+          }
+        }
+        if (decoder) return drainVideo();
+      }).then(function () {
+        return pumpAudio(lastVideoUs + start + 1e6);
+      }).then(function () {
+        if (o.onBatch) o.onBatch({ videoBytes: videoBytes, doneUs: lastVideoUs - Math.max(0, firstVideoUs) });
+        report((i - i0) / Math.max(1, i1 - i0), lastVideoUs);
+        return videoStep();
+      });
+    }
+    function audioStep() {
+      check();
+      if (ai >= a1) return Promise.resolve();
+      return pumpAudio(aPts(as[Math.min(ai + 399, a1 - 1)])).then(function () {
+        report((ai - a0) / Math.max(1, a1 - a0), aPts(as[ai - 1]) - start);
+        return audioStep();
+      });
+    }
+    function closeAll() {
+      [decoder, encoder, adec, aenc].forEach(function (c) { try { if (c && c.state !== 'closed') c.close(); } catch (e) {} });
+    }
+
+    return (V ? videoStep() : audioStep()).then(function () {
+      return decoder && decoder.flush();
     }).then(function () {
-      return encoder.flush();
+      return encoder && encoder.flush();
     }).then(function () {
       check();
       return pumpAudio(Infinity);
     }).then(function () {
+      return adec && adec.flush();
+    }).then(function () {
+      return aenc && aenc.flush();
+    }).then(function () {
       check();
-      if (!framesOut) throw new Error('no frames');
+      if (V && !framesOut) throw new Error('no video frames');
       muxer.finalize();
-      var secs = (performance.now() - started) / 1000;
-      try { decoder.close(); encoder.close(); } catch (e) {}
+      closeAll();
+      var blob = sink.toBlob();
+      return firstCtoUs > 0 ? addEditList(blob, firstCtoUs) : blob;
+    }, function (e) {
+      closeAll();
+      throw e;
+    });
+  }
+
+  /* ---------- tools ---------- */
+
+  function runCompress() {
+    if (!S.fast) return compressRealtime();
+    var F = S.fast, enc = currentEncoder();
+    var preset = document.querySelector('input[name=q]:checked').value;
+    var dims = targetSize(+$('maxh').value);
+    var audio = compressAudioPlan(), audioBytes = audioPlanBytes(audio), noGain = 0;
+    var job = beginJob('Keep this tab open until it finishes. Your device can be used for other things meanwhile.', function () { job.cancelled = true; });
+    var started = performance.now();
+    transcode({
+      job: job,
+      video: { mode: 'encode', enc: enc, dims: dims, vbps: bitrateFor(preset, dims), rotation: F.rotation },
+      audio: audio,
+      onProgress: function (p, media, elapsed) { setProgress(p, elapsed, media); },
+      // Stop early when the output is on course to be no smaller than the original.
+      onBatch: function (st) {
+        if (st.doneUs > Math.max(60e6, F.dur * 1e6 * 0.04)) {
+          var projected = st.videoBytes * F.dur * 1e6 / st.doneUs + audioBytes;
+          if (projected > S.file.size * 0.97) { noGain = projected; throw new Error('no gain'); }
+        }
+      }
+    }).then(function (blob) {
       endJob();
-      showResult(sink.toBlob(), 'mp4', secs);
+      showSingle(blob, baseName() + '_compressed.mp4', (performance.now() - started) / 1000, 'video');
     }).catch(function (e) {
-      try { if (decoder.state !== 'closed') decoder.close(); } catch (x) {}
-      try { if (encoder.state !== 'closed') encoder.close(); } catch (x) {}
-      endJob();
-      $('prog').hidden = true;
-      if (cancelled) return;
-      if (noGain) {
+      if (noGain && !job.cancelled) {
+        endJob(); $('prog').hidden = true;
         showError('Stopped early: at these settings the result would be about ' + fmtSize(noGain) + ', no smaller than the original. This video is already tightly compressed. ' +
-          (currentEncoder().kind === 'avc' && S.encoders.auto && S.encoders.auto.kind !== 'avc' ? 'Choose the “Smallest file” format, or ' : 'Try ') + 'Smallest quality or a lower resolution.');
+          (enc.kind === 'avc' && S.encoders.auto && S.encoders.auto.kind !== 'avc' ? 'Choose the “Smallest file” format, or ' : 'Try ') + 'Smallest quality or a lower resolution.');
         return;
       }
-      console.error(e);
-      showError('Fast mode stopped part way through (' + ((e && e.message) || 'encoder error') + '). Try the “Plays everywhere (H.264)” format, or a different quality.');
+      jobFailed(job, e, 'Compression stopped part way through');
+    });
+  }
+
+  function runExtract() {
+    var audio = extractPlan();
+    var job = beginJob(audio.mode === 'copy' ? 'Copying the audio out of the video. This only takes a moment.' : 'Re-encoding the audio. Keep this tab open until it finishes.', function () { job.cancelled = true; });
+    var started = performance.now();
+    transcode({
+      job: job, video: null, audio: audio,
+      onProgress: function (p, media, elapsed) { setProgress(p, elapsed, media); }
+    }).then(function (blob) {
+      endJob();
+      showSingle(blob, baseName() + '_audio.' + audioExt(), (performance.now() - started) / 1000, 'audio');
+    }).catch(function (e) { jobFailed(job, e, 'Audio extraction stopped part way through'); });
+  }
+
+  // Draws one source frame into a vertical 9:16 canvas, upright, cropped or fitted, with an optional label.
+  function makeVerticalDrawer(framing, label) {
+    var F = S.fast, rot = F.rotation, dw = rot % 180 ? F.h : F.w, dh = rot % 180 ? F.w : F.h;
+    var up = rot ? new OffscreenCanvas(dw, dh) : null, upc = up && up.getContext('2d');
+    var small = framing === 'blur' ? new OffscreenCanvas(36, 64) : null, sc = small && small.getContext('2d');
+    function cover(c, src, W, H) {
+      var scale = Math.max(W / dw, H / dh), w = dw * scale, h = dh * scale;
+      c.drawImage(src, (W - w) / 2, (H - h) / 2, w, h);
+    }
+    return function (ctx, frame, W, H) {
+      var src = frame;
+      if (up) {
+        upc.save();
+        upc.translate(dw / 2, dh / 2);
+        upc.rotate(rot * Math.PI / 180);
+        upc.drawImage(frame, -F.w / 2, -F.h / 2, F.w, F.h);
+        upc.restore();
+        src = up;
+      }
+      if (framing === 'blur') {
+        // a tiny cover-scaled copy stretched to full size reads as a soft blur and costs little
+        cover(sc, src, 36, 64);
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(small, 0, 0, W, H);
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.fillRect(0, 0, W, H);
+        var fit = Math.min(W / dw, H / dh), fw = dw * fit, fh = dh * fit;
+        ctx.drawImage(src, (W - fw) / 2, (H - fh) / 2, fw, fh);
+      } else {
+        cover(ctx, src, W, H);
+      }
+      if (label) {
+        var size = Math.round(W * 0.055);
+        ctx.font = '700 ' + size + 'px "Bricolage Grotesque", system-ui, sans-serif';
+        var tw = ctx.measureText(label).width, padX = size * 0.6, boxH = size * 1.6;
+        var x = (W - tw) / 2, y = Math.round(H * 0.07);
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(x - padX, y, tw + padX * 2, boxH);
+        ctx.fillStyle = '#ffffff';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, x, y + boxH / 2);
+      }
+    };
+  }
+
+  function runSplit() {
+    var F = S.fast;
+    var L = +$('s-length').value * 1e6, framing = $('s-frame').value, withLabel = $('s-label').checked;
+    var copy = framing === 'copy' && F.copyable;
+    var plan = splitPlan(L, copy), N = plan.length;
+    var audio = !F.atrak ? null : F.audioCopyable ? { mode: 'copy' } : { mode: 'encode', enc: S.audioEnc, bitrate: AUDIO_BPS };
+    var job = beginJob(copy ? 'Cutting the video into parts without re-encoding. This is quick.' : 'Re-encoding each part. Keep this tab open until it finishes.', function () { job.cancelled = true; });
+    var started = performance.now(), done = [], idx = 0;
+    clearResults();
+
+    var vertical = framing !== 'copy';
+    var dims = vertical ? verticalSize() : { w: even(F.w), h: even(F.h) };
+    var encP = copy ? Promise.resolve(null) : pickEncoders(dims.w, dims.h, Math.min(F.fps, 60)).then(function (e) { return e.h264 || e.auto; });
+
+    encP.then(function (enc) {
+      if (!copy && !enc) throw new Error('no encoder for ' + dims.w + '×' + dims.h);
+      var vbps = vertical ? Math.round(Math.min(0.07 * dims.w * dims.h * F.fps, 8e6)) : Math.round(F.srcVideoBps * 1.1);
+      return (function next() {
+        if (idx >= N) return;
+        var seg = plan[idx], n = idx + 1;
+        var video = copy
+          ? { mode: 'copy', rotation: F.rotation }
+          : { mode: 'encode', enc: enc, dims: dims, vbps: vbps, rotation: vertical ? 0 : F.rotation,
+              draw: vertical ? makeVerticalDrawer(framing, withLabel ? 'Part ' + n + '/' + N : '') : null };
+        return transcode({
+          job: job, start: seg.start, end: idx === N - 1 ? null : seg.end, video: video, audio: audio,
+          onProgress: function (p) {
+            var elapsed = (performance.now() - started) / 1000, overall = (idx + p) / N;
+            setProgress(overall, elapsed, overall * F.dur);
+            $('prog-hint').textContent = 'Working on part ' + n + ' of ' + N + '…';
+          }
+        }).then(function (blob) {
+          var pad = String(N).length < 2 ? 2 : String(N).length;
+          done.push({ blob: blob, name: baseName() + '_part' + String(n).padStart(pad, '0') + '.mp4', kind: 'video', start: seg.start, end: seg.end });
+          idx++;
+          return next();
+        });
+      })();
+    }).then(function () {
+      endJob();
+      showParts(done, (performance.now() - started) / 1000);
+    }).catch(function (e) {
+      if (done.length && !job.cancelled) { jobFailed(job, e, 'Splitting stopped after ' + done.length + ' of ' + N + ' parts'); showParts(done, 0); return; }
+      jobFailed(job, e, 'Splitting stopped part way through');
     });
   }
 
@@ -768,8 +1254,7 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
     canvas.width = dims.w; canvas.height = dims.h;
     var ctx = canvas.getContext('2d', { alpha: false });
     var actx = null, chunks = [], recorder, cancelled = false, stopped = false, started = 0;
-    S.job = { cancel: function () { cancelled = true; finish(); } };
-    beginJob('Real-time mode plays the video through once, so it takes about as long as the video itself. Keep this tab open and visible.');
+    beginJob('Real-time mode plays the video through once, so it takes about as long as the video itself. Keep this tab open and visible.', function () { cancelled = true; finish(); });
 
     function cleanup() {
       try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {}
@@ -802,7 +1287,7 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
         var secs = (performance.now() - started) / 1000;
         cleanup();
         if (cancelled) { $('prog').hidden = true; return; }
-        showResult(blob, ext, secs);
+        showSingle(blob, baseName() + '_compressed.' + ext, secs, 'video');
       };
       var drawLoop = function () {
         if (stopped) return;
@@ -815,59 +1300,115 @@ video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; dis
       if (actx && actx.state === 'suspended') actx.resume();
       recorder.start(1000);
       started = performance.now();
-      v.play().then(drawLoop, function () { fail('The browser blocked playback. Click Compress again.'); });
+      v.play().then(drawLoop, function () { fail('The browser blocked playback. Click Start again.'); });
     };
   }
 
-  /* ---------- result ---------- */
+  /* ---------- results ---------- */
 
-  function showResult(blob, ext, secs) {
-    S.resultBlob = blob; S.resultExt = ext;
-    if (S.resultUrl) URL.revokeObjectURL(S.resultUrl);
-    S.resultUrl = URL.createObjectURL(blob);
-    var oldB = S.file.size, newB = blob.size, saved = 1 - newB / oldB;
-    $('r-old').textContent = fmtSize(oldB); $('r-new').textContent = fmtSize(newB);
-    $('r-pct').textContent = saved > 0 ? '−' + Math.round(saved * 100) + '%' : '+' + Math.round(-saved * 100) + '%';
-    $('r-pct').style.color = saved > 0 ? 'var(--good)' : 'var(--warn)';
-    $('r-time').textContent = 'Finished in ' + fmtTime(secs) + (S.meta.duration && secs > 0 ? ' (' + (S.meta.duration / secs).toFixed(1) + '× real time).' : '.');
+  function preview(r) {
+    if (!r.url) r.url = URL.createObjectURL(r.blob);
+    var isAudio = r.kind === 'audio';
+    $('r-video').hidden = isAudio; $('r-audio').hidden = !isAudio;
+    (isAudio ? $('r-audio') : $('r-video')).src = r.url;
+  }
+  function showSingle(blob, name, secs, kind) {
+    clearResults();
+    var r = { blob: blob, name: name, kind: kind };
+    S.results = [r];
+    var oldB = kind === 'audio' ? null : S.file.size, newB = blob.size;
+    $('r-sizes').hidden = false;
+    if (oldB) {
+      var saved = 1 - newB / oldB;
+      $('r-old').textContent = fmtSize(oldB); $('r-new').textContent = fmtSize(newB);
+      $('r-pct').textContent = saved > 0 ? '−' + Math.round(saved * 100) + '%' : '+' + Math.round(-saved * 100) + '%';
+      $('r-pct').style.color = saved > 0 ? 'var(--good)' : 'var(--warn)';
+    } else {
+      $('r-pct').textContent = fmtSize(newB);
+      $('r-pct').style.color = 'var(--good)';
+      $('r-sizes').hidden = true;
+    }
+    $('r-time').textContent = name + ' · finished in ' + fmtTime(secs) + (S.meta.duration && secs > 0.5 ? ' (' + (S.meta.duration / secs).toFixed(1) + '× real time).' : '.');
     var w = $('r-warn');
-    if (saved <= 0.02) {
+    if (oldB && newB / oldB > 0.98) {
       w.textContent = 'This video was already compressed about as far as it goes. Keep the original, or try Smallest or a lower resolution.';
       w.hidden = false;
     } else w.hidden = true;
-    $('r-video').src = S.resultUrl;
+    $('r-parts').hidden = true;
+    $('save').textContent = kind === 'audio' ? 'Save audio' : 'Save compressed video';
+    preview(r);
+    finishResult();
+  }
+  function showParts(list, secs) {
+    S.results = list;
+    var total = list.reduce(function (t, r) { return t + r.blob.size; }, 0);
+    $('r-pct').textContent = list.length + (list.length === 1 ? ' part' : ' parts');
+    $('r-pct').style.color = 'var(--good)';
+    $('r-sizes').hidden = true;
+    $('r-time').textContent = fmtSize(total) + ' in total' + (secs ? ' · finished in ' + fmtTime(secs) + '.' : '.');
+    $('r-warn').hidden = true;
+    var ul = $('r-parts');
+    ul.textContent = '';
+    list.forEach(function (r, i) {
+      var li = document.createElement('li');
+      var name = document.createElement('span'); name.className = 'pname'; name.textContent = 'Part ' + (i + 1);
+      var meta = document.createElement('span'); meta.className = 'pmeta';
+      var endS = (r.end == null || r.end === Infinity ? S.fast.dur * 1e6 : r.end);
+      meta.textContent = fmtTime(r.start / 1e6) + '–' + fmtTime(endS / 1e6) + ' · ' + fmtTime((endS - r.start) / 1e6) + ' · ' + fmtSize(r.blob.size);
+      var pv = document.createElement('button'); pv.className = 'secondary'; pv.textContent = 'Preview';
+      pv.addEventListener('click', function () { preview(r); $('r-video').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
+      var sv = document.createElement('button'); sv.className = 'secondary'; sv.textContent = 'Save';
+      sv.addEventListener('click', function () { saveOne(r); });
+      li.appendChild(name); li.appendChild(meta); li.appendChild(pv); li.appendChild(sv);
+      ul.appendChild(li);
+    });
+    ul.hidden = false;
+    $('save').textContent = 'Save all ' + list.length + ' parts';
+    if (list.length) preview(list[0]);
+    finishResult();
+  }
+  function finishResult() {
     $('save-note').textContent = '';
     $('prog').hidden = true; $('result').hidden = false;
     $('result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
-  function save() {
-    if (!S.resultBlob) return;
-    var name = (S.file.name.replace(/\.[^.]+$/, '') || 'video') + '_compressed.' + S.resultExt;
+  function saveOne(r) {
     if (downloads) {
-      downloads.save({ filename: name, data: S.resultBlob }).then(function () {
-        $('save-note').textContent = 'Saved.';
+      return downloads.save({ filename: r.name, data: r.blob }).then(function () {
+        $('save-note').textContent = 'Saved ' + r.name + '.';
       }, function (err) {
         if (err && err.code === 'declined') return;
-        $('save-note').textContent = 'Could not save the file (' + ((err && err.code) || 'error') + '). Right-click the video and choose “Save video as” instead.';
+        $('save-note').textContent = 'Could not save ' + r.name + ' (' + ((err && err.code) || 'error') + ').';
       });
-      return;
     }
+    if (!r.url) r.url = URL.createObjectURL(r.blob);
     var a = document.createElement('a');
-    a.href = S.resultUrl; a.download = name;
+    a.href = r.url; a.download = r.name;
     document.body.appendChild(a); a.click(); a.remove();
+    return new Promise(function (res) { setTimeout(res, 400); });
   }
+  function saveAll() {
+    if (S.results.length > 1 && !downloads) $('save-note').textContent = 'If Chrome asks whether this site may download multiple files, choose Allow.';
+    S.results.reduce(function (p, r) { return p.then(function () { return saveOne(r); }); }, Promise.resolve());
+  }
+
+  /* ---------- wiring ---------- */
 
   $('file').addEventListener('change', function (e) { onFile(e.target.files[0]); e.target.value = ''; });
   var drop = $('drop');
   ['dragenter', 'dragover'].forEach(function (n) { drop.addEventListener(n, function (e) { e.preventDefault(); drop.classList.add('over'); }); });
   ['dragleave', 'drop'].forEach(function (n) { drop.addEventListener(n, function (e) { e.preventDefault(); drop.classList.remove('over'); }); });
   drop.addEventListener('drop', function (e) { onFile(e.dataTransfer.files[0]); });
-  $('maxh').addEventListener('change', refreshEstimates);
-  $('fmt').addEventListener('change', refreshEstimates);
-  $('go').addEventListener('click', compress);
-  $('cancel').addEventListener('click', function () { if (S.job) S.job.cancel(); });
-  $('save').addEventListener('click', save);
+  ['compress', 'audio', 'split'].forEach(function (t) { $('tab-' + t).addEventListener('click', function () { selectTool(t); }); });
+  ['maxh', 'fmt', 'c-audio', 'a-quality', 's-length', 's-frame'].forEach(function (id) { $(id).addEventListener('change', refreshEstimates); });
+  document.querySelectorAll('input[name=q]').forEach(function (r) { r.addEventListener('change', refreshEstimates); });
+  $('go').addEventListener('click', function () {
+    if (S.job) return;
+    if (S.tool === 'audio') runExtract(); else if (S.tool === 'split') runSplit(); else runCompress();
+  });
+  $('cancel').addEventListener('click', function () { if (S.job && S.job.cancel) S.job.cancel(); });
+  $('save').addEventListener('click', function () { if (S.results.length > 1) saveAll(); else if (S.results[0]) saveOne(S.results[0]); });
   $('again').addEventListener('click', function () { $('result').hidden = true; $('tune').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
 })();
 </script>
