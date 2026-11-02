@@ -1358,7 +1358,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
       Object.keys(files).forEach(function (k) { loaded += files[k].loaded; total += files[k].total; });
       onStatus('Downloading the speech model… ' + fmtSize(loaded) + ' of ' + fmtSize(total));
     }
-    var p = import(TRANSFORMERS_URL).then(function (T) {
+    var p = loadLibrary().then(function (T) {
       T.env.allowLocalModels = false;
       function make(device) {
         var opts = device === 'webgpu'
@@ -1372,6 +1372,55 @@ audio { width: 100%; display: block; margin-top: 12px; }
     transcribers[id] = p;
     p.catch(function () { delete transcribers[id]; });
     return p;
+  }
+
+  var libraryP = null;
+  function loadLibrary() {
+    if (!libraryP) { libraryP = import(TRANSFORMERS_URL); libraryP.catch(function () { libraryP = null; }); }
+    return libraryP;
+  }
+
+  // The trained notes model (see training/), if one has been added to models/notes-model/.
+  // Resolves to null when there is none, so the rules are used instead.
+  var notesModelP = null;
+  function loadNotesModel() {
+    if (notesModelP) return notesModelP;
+    var dir = new URL('models/', location.href).href;
+    notesModelP = fetch(dir + 'notes-model/config.json', { method: 'HEAD' }).then(function (r) {
+      if (!r.ok) return null;
+      return loadLibrary().then(function (T) {
+        // a path, not a full URL: transformers.js only treats paths as local files
+        T.env.allowLocalModels = true; T.env.allowRemoteModels = false; T.env.localModelPath = new URL(dir).pathname;
+        function restore() { T.env.allowLocalModels = false; T.env.allowRemoteModels = true; }
+        return Promise.all([
+          T.AutoTokenizer.from_pretrained('notes-model'),
+          T.AutoModelForSequenceClassification.from_pretrained('notes-model', { dtype: 'q8', device: 'wasm' })
+        ]).then(function (r2) { restore(); return { tok: r2[0], model: r2[1] }; }, function (e) { restore(); throw e; });
+      });
+    }).catch(function (e) { console.warn('Notes model not used:', e); return null; });
+    return notesModelP;
+  }
+  // The classifier's input: the sentence, then its neighbours. training/notes_model.py builds the same string.
+  function modelInput(sentences, i) {
+    var ctx = [i > 0 ? sentences[i - 1].text : '', i + 1 < sentences.length ? sentences[i + 1].text : ''].filter(Boolean).join(' ');
+    return sentences[i].text + ' [SEP] ' + ctx;
+  }
+  function modelScores(m, sentences) {
+    var scores = [], B = 16;
+    return (function next(i) {
+      if (i >= sentences.length) return Promise.resolve(scores);
+      var batch = [];
+      for (var j = i; j < Math.min(i + B, sentences.length); j++) batch.push(modelInput(sentences, j));
+      var enc = m.tok(batch, { padding: true, truncation: true, max_length: 128 });
+      return m.model(enc).then(function (out) {
+        var d = out.logits.data, n = out.logits.dims[1];
+        for (var k = 0; k < batch.length; k++) {
+          var a = d[k * n], b = d[k * n + 1], mx = Math.max(a, b);
+          scores.push(Math.exp(b - mx) / (Math.exp(a - mx) + Math.exp(b - mx)));
+        }
+        return next(i + B);
+      });
+    })(0);
   }
 
   function audioDataToMono(d) {
@@ -1577,10 +1626,24 @@ audio { width: 100%; display: block; margin-top: 12px; }
     var words = segs.reduce(function (n, s) { return n + s.text.split(/\s+/).length; }, 0);
     $('r-pct').textContent = segs.length ? words.toLocaleString() + ' words' : 'No speech found';
     $('r-time').textContent = (stopped ? 'Stopped at ' + stamp(T.to) + '. ' : '') + 'Covers ' + stamp(T.from) + '–' + stamp(T.to) + '.';
-    T.notes = pickNotes(segs, T.to - T.from);
+    T.notes = null;
+    $('r-points').textContent = ''; $('r-topics').textContent = '';
+    $('r-points-hint').textContent = segs.length ? 'Picking out the important points…' : 'Not enough speech to pick out important points.';
+    var sentences = buildSentences(segs);
+    (segs.length ? loadNotesModel() : Promise.resolve(null)).then(function (m) {
+      return m ? modelScores(m, sentences).then(function (sc) { return { scores: sc, model: true }; }, function (e) { console.warn(e); return { model: false }; }) : { model: false };
+    }).then(function (r) {
+      T.notes = pickNotes(sentences, T.to - T.from, r.scores);
+      renderNotes(T.notes, r.model);
+    });
+    ['t-copy', 't-save-txt', 't-save-srt'].forEach(function (b) { $(b).disabled = !segs.length; });
+    $('t-save-notes').disabled = true;
+    finishResult();
+  }
+  function renderNotes(notes, byModel) {
     var ul = $('r-points');
     ul.textContent = '';
-    T.notes.points.forEach(function (pt) {
+    notes.points.forEach(function (pt) {
       var li = document.createElement('li'), span = document.createElement('span');
       span.textContent = pt.text;
       li.appendChild(tsButton(pt.start)); li.appendChild(span);
@@ -1588,12 +1651,11 @@ audio { width: 100%; display: block; margin-top: 12px; }
     });
     var tp = $('r-topics');
     tp.textContent = '';
-    T.notes.topics.forEach(function (w) { var s = document.createElement('span'); s.textContent = w; tp.appendChild(s); });
-    $('r-points-hint').textContent = T.notes.points.length
-      ? 'Picked automatically from the transcript by how often their topics come up and phrases like “important” or “remember”. Click a time to jump the video there.'
+    notes.topics.forEach(function (w) { var s = document.createElement('span'); s.textContent = w; tp.appendChild(s); });
+    $('r-points-hint').textContent = notes.points.length
+      ? (byModel ? 'Picked by the trained notes model on your device.' : 'Picked automatically from the transcript by how often their topics come up and phrases like “important” or “remember”.') + ' Click a time to jump the video there.'
       : 'Not enough speech to pick out important points.';
-    ['t-copy', 't-save-txt', 't-save-srt', 't-save-notes'].forEach(function (b) { $(b).disabled = !segs.length; });
-    finishResult();
+    $('t-save-notes').disabled = !notes.points.length;
   }
 
   var STOP = ('a about above after again against all also am an and any are as at be because been before being below between both but by can could did do does doing down during each even few for from further get got had has have having he her here hers him his how i if in into is it its just know like make many me might more most much my no nor not now of off on once one only or other our out over own really right said same say see she should so some such than that the their them then there these they thing things think this those through to too um uh under until up very was way we well were what when where which while who why will with would yeah yes you your going gonna want okay ok oh lot let us') .split(' ');
@@ -1604,9 +1666,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
   function words(text) {
     return (text.toLowerCase().match(/[\p{L}\p{N}']+/gu) || []).map(function (w) { return w.replace(/^'+|'+$/g, ''); }).filter(Boolean);
   }
-  // Picks the transcript's important sentences: ones built from its most repeated topic words,
-  // with a lift for cue phrases, spread through the recording, kept in time order.
-  function pickNotes(segs, durSec) {
+  function buildSentences(segs) {
     var sentences = [], cur = '', curStart = 0;
     segs.forEach(function (sg) {
       var pieces = sg.text.match(/[^.!?]+[.!?]+["'”’)\]]*|[^.!?]+$/g) || [sg.text];
@@ -1617,7 +1677,12 @@ audio { width: 100%; display: block; margin-top: 12px; }
       });
     });
     if (cur.trim()) sentences.push({ start: curStart, text: cur.trim() });
-
+    return sentences;
+  }
+  // Picks the transcript's important sentences, spread through the recording, kept in time order.
+  // With modelScores (from the trained notes model) those decide; otherwise the rules do: sentences
+  // built from the most repeated topic words, with a lift for cue phrases.
+  function pickNotes(sentences, durSec, modelScores) {
     var freq = {}, bigrams = {};
     sentences.forEach(function (s) {
       var ws = words(s.text);
@@ -1629,7 +1694,8 @@ audio { width: 100%; display: block; margin-top: 12px; }
       });
     });
     var maxF = Math.max.apply(null, [1].concat(Object.keys(freq).map(function (k) { return freq[k]; })));
-    sentences.forEach(function (s) {
+    sentences.forEach(function (s, idx) {
+      if (modelScores) { s.score = modelScores[idx]; return; }
       var ws = words(s.text), seen = {}, score = 0, content = 0;
       ws.forEach(function (w) {
         if (!freq[w]) return;

@@ -33,9 +33,19 @@ Notes: audio is copied untouched when already AAC/MP3/Opus/Vorbis, otherwise
 re-encoded to AAC 128k. Outputs that aren't smaller than the original are
 discarded (override with `--keep-larger`). The original is never modified.
 
+## Training the notes model (Google Colab)
+The important points can come from a small trained model instead of the built-in
+rules. Open `training/train_notes_model.ipynb` in Colab
+(https://colab.research.google.com/github/rhhas-knust/Video-Compressor/blob/main/training/train_notes_model.ipynb),
+pick a T4 GPU and run all cells (about 30–60 minutes). It fine-tunes ELECTRA-small
+on public meeting and news summaries, compares it with the rules, and exports a
+~14 MB int8 ONNX model. Upload the resulting `notes-model` folder to `web/models/`
+and the page uses it; see `web/models/README.md`.
+
 ## Tests
 ```bash
 pip install pytest && python3 -m pytest tests
+# the training test also runs when torch, transformers and onnxruntime are installed
 ```
 
 ## Web version (no install, works on Chromebook)
