@@ -1,0 +1,7 @@
+# Colab already has torch; these are the rest.
+transformers>=4.44
+datasets>=2.19
+accelerate>=0.30
+onnx>=1.16
+onnxruntime>=1.18
+rouge-score>=0.1.2

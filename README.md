@@ -33,9 +33,19 @@ Notes: audio is copied untouched when already AAC/MP3/Opus/Vorbis, otherwise
 re-encoded to AAC 128k. Outputs that aren't smaller than the original are
 discarded (override with `--keep-larger`). The original is never modified.
 
+## Training the notes model (Google Colab)
+The important points can come from a small trained model instead of the built-in
+rules. Open `training/train_notes_model.ipynb` in Colab
+(https://colab.research.google.com/github/rhhas-knust/Video-Compressor/blob/main/training/train_notes_model.ipynb),
+pick a T4 GPU and run all cells (about 30–60 minutes). It fine-tunes ELECTRA-small
+on public meeting and news summaries, compares it with the rules, and exports a
+~14 MB int8 ONNX model. Upload the resulting `notes-model` folder to `web/models/`
+and the page uses it; see `web/models/README.md`.
+
 ## Tests
 ```bash
 pip install pytest && python3 -m pytest tests
+# the training test also runs when torch, transformers and onnxruntime are installed
 ```
 
 ## Web version (no install, works on Chromebook)
@@ -48,8 +58,27 @@ High / Balanced / Smallest and save the result. Nothing is uploaded.
   available; AV1 shrinks already-compressed videos that H.264 cannot.
   "Plays everywhere" uses H.264. If the output is on course to be no smaller
   than the original, it stops early and says so.
+- **Audio**: when compressing, keep the original audio or re-encode it smaller
+  (96 or 64 kbps). AAC is used where Chrome can encode it, Opus otherwise.
+- **Extract audio**: save the soundtrack as `.m4a`. "Original" copies the AAC
+  stream unchanged, instantly; the smaller options re-encode it.
+- **Split for Shorts & TikTok**: cut a long video into parts of 30 s to 10 min.
+  "Keep original" cuts at keyframes without re-encoding (instant, no quality loss,
+  parts never exceed the chosen length). The vertical 9:16 options re-encode each
+  part as an H.264 MP4, cropping the middle or fitting over a blurred background,
+  with an optional "Part 1/N" label.
+- **Transcribe & notes**: turns speech into a timestamped transcript with the
+  Whisper model (transformers.js), run on the device. The model (about 40 MB, or
+  80 MB for "More accurate") downloads once from Hugging Face and is cached;
+  transformers.js itself loads from jsDelivr. The
+  page then picks out the important sentences (by repeated topic words and cue
+  phrases such as "important" or "remember") and lists the main topics. Save as
+  .txt, subtitles (.srt) or notes; a From/To range lets long videos be done in
+  pieces. Needs the GitHub Pages version (the claude.ai view blocks the model
+  download).
 - **Real-time mode** (other formats, e.g. MKV): plays the video through once
-  with MediaRecorder, so it takes as long as the video.
+  with MediaRecorder, so it takes as long as the video. Only compression is
+  available in this mode.
 
 Hosted with GitHub Pages (Settings → Pages → Deploy from branch `main`, `/ (root)`):
 https://rhhas-knust.github.io/Video-Compressor/ redirects to the app in `web/`.
