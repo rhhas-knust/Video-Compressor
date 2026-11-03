@@ -1,6 +1,11 @@
 <title>Video Compressor</title>
 <meta charset="utf-8">
 <meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#0b6e66">
+<meta name="description" content="Compress videos, extract audio, split long videos for TikTok and YouTube Shorts, and transcribe speech, all on your device.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon-48.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
 /* Layout: one narrow working column, three labelled steps; step 2 switches between three tools, results appear below. */
@@ -110,6 +115,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); o
 video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; display: block; margin-top: 12px; }
 .foot { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; }
 .ver { display: block; margin-top: 8px; font: 500 12px var(--font-mono); letter-spacing: .04em; }
+.ver a { color: inherit; }
 @media (max-width: 520px) { .quality { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .bar > i, .drop { transition: none; } }
 .mode { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
@@ -329,7 +335,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
     </div>
   </section>
 
-  <p class="foot">Fast mode reads MP4 and MOV files directly and processes them with your device’s video encoder, usually many times faster than playback. Other formats can only be compressed, in real-time mode, which plays the video through once. Transcription uses the Whisper speech model, downloaded once (from Hugging Face, with its software from jsDelivr) and run on your device. <span class="ver">Version 7 · 1 Nov 2026</span></p>
+  <p class="foot">Fast mode reads MP4 and MOV files directly and processes them with your device’s video encoder, usually many times faster than playback. Other formats can only be compressed, in real-time mode, which plays the video through once. Transcription uses the Whisper speech model, downloaded once (from Hugging Face, with its software from jsDelivr) and run on your device. <span class="ver">Version 8 · 3 Nov 2026 · <a href="privacy.html">Privacy</a></span></p>
 </main>
 
 <script src="vendor/mp4box.all.min.js"></script>
@@ -352,6 +358,10 @@ audio { width: 100%; display: block; margin-top: 12px; }
   var S = { file: null, url: null, meta: null, fast: null, encoders: null, audioEnc: null, tool: 'compress', job: null, results: [], current: 0 };
   var downloads = null;
   var IN_CLAUDE = !!window.claude;
+  // Lets the page be installed as an app (and packaged for the Microsoft Store). Not inside claude.ai.
+  if (!IN_CLAUDE && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === '127.0.0.1')) {
+    try { navigator.serviceWorker.register('sw.js').catch(function () {}); } catch (e) {}
+  }
   try {
     if (window.claude && window.claude.use) window.claude.use('downloads').then(function (d) { downloads = d; }, function () {});
   } catch (e) {}

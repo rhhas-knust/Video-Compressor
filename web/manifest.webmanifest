@@ -1,0 +1,27 @@
+{
+  "id": "./",
+  "name": "Video Compressor",
+  "short_name": "Video Compressor",
+  "description": "Compress videos, extract their audio, split long videos into parts for TikTok and YouTube Shorts, and transcribe speech with the important points picked out. Everything runs on your device; videos are never uploaded.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f3f4f2",
+  "theme_color": "#0b6e66",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["photo", "video", "utilities", "productivity"],
+  "launch_handler": { "client_mode": "focus-existing" },
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "screenshots": [
+    { "src": "screenshots/compress.png", "sizes": "1920x1080", "type": "image/png", "form_factor": "wide", "label": "Compress a video and see how much smaller it got" },
+    { "src": "screenshots/split.png", "sizes": "1920x1080", "type": "image/png", "form_factor": "wide", "label": "Split a long video into parts for Shorts and TikTok" },
+    { "src": "screenshots/transcribe.png", "sizes": "1920x1080", "type": "image/png", "form_factor": "wide", "label": "Transcript with the important points picked out" }
+  ]
+}
