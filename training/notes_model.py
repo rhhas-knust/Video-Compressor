@@ -364,18 +364,22 @@ def export_onnx(model_dir, out_dir):
             return self.m(**dict(zip(names, args))).logits
 
     fp32 = out / "onnx" / "model.onnx"
+    # The wrapper must be in eval mode too: the exporter restores the wrapper's mode afterwards,
+    # which would otherwise switch the model back to training (dropout on) for the checks below.
     torch.onnx.export(
-        Wrapper(model), tuple(enc[n] for n in names), str(fp32),
+        Wrapper(model).eval(), tuple(enc[n] for n in names), str(fp32),
         input_names=names, output_names=["logits"],
         dynamic_axes={**{n: {0: "batch", 1: "sequence"} for n in names}, "logits": {0: "batch"}},
         opset_version=17, dynamo=False,
     )
     quantize_dynamic(str(fp32), str(out / "onnx" / "model_quantized.onnx"), weight_type=QuantType.QInt8)
+    model.eval()
 
     # Check against PyTorch on batch sizes and lengths other than the traced sample, as the page sends.
     checks = [sample + ["Short one. [SEP] ", "A much longer sentence about the budget, the schedule and who does what next week. [SEP] Okay."],
               ["Just one sentence here. [SEP] Then the next one."]]
-    for f in ("model.onnx", "model_quantized.onnx"):
+    # The float model should match almost exactly; int8 rounding moves probabilities a little.
+    for f, tolerance in (("model.onnx", 1e-3), ("model_quantized.onnx", 0.05)):
         sess = ort.InferenceSession(str(out / "onnx" / f), providers=["CPUExecutionProvider"])
         worst = 0.0
         for batch in checks:
@@ -386,7 +390,7 @@ def export_onnx(model_dir, out_dir):
             probs = np.exp(logits) / np.exp(logits).sum(-1, keepdims=True)
             worst = max(worst, float(np.abs(probs - ref).max()))
         print(f"  {f}: max difference from PyTorch {worst:.4f}")
-        if worst > 0.05:
+        if worst > tolerance:
             raise RuntimeError(f"{f} disagrees with PyTorch by {worst:.3f}; the export is not usable")
 
     fp32.unlink()  # the page only loads the int8 model
