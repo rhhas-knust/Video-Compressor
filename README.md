@@ -33,6 +33,11 @@ Notes: audio is copied untouched when already AAC/MP3/Opus/Vorbis, otherwise
 re-encoded to AAC 128k. Outputs that aren't smaller than the original are
 discarded (override with `--keep-larger`). The original is never modified.
 
+## Installing as an app / Microsoft Store
+The web version is an installable PWA (manifest, icons and a network-first
+service worker in `web/`). In Edge or Chrome use **Install app**; for the
+Microsoft Store, see `store/README.md` (PWABuilder + Partner Center).
+
 ## Training the notes model (Google Colab)
 The important points can come from a small trained model instead of the built-in
 rules. Open `training/train_notes_model.ipynb` in Colab
