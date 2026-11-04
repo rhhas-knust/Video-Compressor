@@ -335,7 +335,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
     </div>
   </section>
 
-  <p class="foot">Fast mode reads MP4 and MOV files directly and processes them with your device’s video encoder, usually many times faster than playback. Other formats can only be compressed, in real-time mode, which plays the video through once. Transcription uses the Whisper speech model, downloaded once (from Hugging Face, with its software from jsDelivr) and run on your device. <span class="ver">Version 8 · 3 Nov 2026 · <a href="privacy.html">Privacy</a></span></p>
+  <p class="foot">Fast mode reads MP4 and MOV files directly and processes them with your device’s video encoder, usually many times faster than playback. Other formats can only be compressed, in real-time mode, which plays the video through once. Transcription uses the Whisper speech model, downloaded once (from Hugging Face, with its software from jsDelivr) and run on your device. <span class="ver">Version 9 · 4 Nov 2026 · <a href="privacy.html">Privacy</a></span></p>
 </main>
 
 <script src="vendor/mp4box.all.min.js"></script>
@@ -1718,9 +1718,13 @@ audio { width: 100%; display: block; margin-top: 12px; }
       if (ws.length > 45) s.score *= 0.7;
     });
     var want = Math.max(5, Math.min(20, Math.round(durSec / 120) + 3));
+    // The model's probabilities mean something on their own: leave out sentences it rates far below
+    // the best one rather than filling every slot with filler.
+    var floor = 0;
+    if (modelScores) floor = Math.max(0.05, Math.max.apply(null, [0].concat(modelScores)) / 3);
     var chosen = [];
     sentences.slice().sort(function (a, b) { return b.score - a.score; }).forEach(function (s) {
-      if (chosen.length >= want || s.score <= 0) return;
+      if (chosen.length >= want || s.score <= 0 || s.score < floor) return;
       for (var i = 0; i < chosen.length; i++) if (Math.abs(chosen[i].start - s.start) < 15) return;
       chosen.push(s);
     });
