@@ -81,6 +81,11 @@ High / Balanced / Smallest and save the result. Nothing is uploaded.
   .txt, subtitles (.srt) or notes; a From/To range lets long videos be done in
   pieces. Needs the GitHub Pages version (the claude.ai view blocks the model
   download).
+- **Camcorder MTS/M2TS (AVCHD)**: converted to MP4 or M4V first. The H.264
+  picture is copied exactly (`web/mts.js` reads the transport stream and joins
+  interlaced field pairs), and the Dolby AC-3/MPEG/PCM sound is converted to
+  stereo AAC with ffmpeg.wasm (about 32 MB, loaded once). The converted file then
+  works with every tool; Compress can also remove interlacing lines.
 - **Real-time mode** (other formats, e.g. MKV): plays the video through once
   with MediaRecorder, so it takes as long as the video. Only compression is
   available in this mode.
