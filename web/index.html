@@ -160,9 +160,9 @@ audio { width: 100%; display: block; margin-top: 12px; }
   <section class="step" aria-labelledby="s1">
     <div class="label" id="s1">Step 1 · Choose a video</div>
     <label class="drop" id="drop">
-      <input type="file" id="file" accept="video/*,.mkv,.mov">
+      <input type="file" id="file" accept="video/*,.mkv,.mov,.mts,.m2ts">
       <strong>Select a video file</strong>
-      <span>or drop one here. MP4 and MOV files work fastest.</span>
+      <span>or drop one here. MP4, MOV and camcorder MTS files all work.</span>
     </label>
     <div class="panel" id="info" hidden>
       <div class="fname" id="fname"></div>
@@ -173,6 +173,37 @@ audio { width: 100%; display: block; margin-top: 12px; }
         <div><dt>Frame rate</dt><dd id="i-fps"></dd></div>
       </dl>
       <div class="mode"><span class="chip" id="mode-chip"></span><span id="mode-text"></span></div>
+      <div class="mode" id="conv" hidden>
+        <span class="chip">Converted</span><span id="conv-text"></span>
+        <button id="conv-save" class="secondary">Save converted video</button>
+      </div>
+    </div>
+    <div class="panel" id="cam" hidden>
+      <div class="fname" id="cam-name"></div>
+      <dl class="fileinfo" style="margin:0">
+        <div><dt>Size</dt><dd id="cam-size"></dd></div>
+        <div><dt>Length</dt><dd id="cam-dur">…</dd></div>
+        <div><dt>Resolution</dt><dd id="cam-res">…</dd></div>
+        <div><dt>Audio</dt><dd id="cam-audio">…</dd></div>
+      </dl>
+      <div class="mode">
+        <span class="chip">Camcorder video</span>
+        <span>Many players can’t open MTS files. Convert it to MP4 first: the picture is copied exactly, so nothing is lost, and the sound is converted to AAC so it plays everywhere. Then you can make it smaller with Compress video.</span>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <label for="cam-ext">Save as</label>
+        <select id="cam-ext">
+          <option value="mp4">MP4 (.mp4)</option>
+          <option value="m4v">M4V (.m4v, for Apple apps)</option>
+        </select>
+        <button id="cam-go" disabled>Convert to MP4</button>
+        <button id="cam-cancel" class="secondary" hidden>Cancel</button>
+      </div>
+      <div id="cam-prog" hidden style="margin-top:12px">
+        <div class="bar"><i id="cam-fill"></i></div>
+        <div class="stats"><span id="cam-pct"></span><span id="cam-eta"></span></div>
+      </div>
+      <div class="notice" id="cam-err" hidden style="margin-top:12px"></div>
     </div>
     <div class="notice" id="fileerr" hidden></div>
     <p class="hint" id="reading" hidden>Reading the file…</p>
@@ -214,6 +245,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
           <option value="64000">Compress more (64 kbps, voice)</option>
         </select>
       </div>
+      <label class="check" id="c-deint-row" hidden><input type="checkbox" id="c-deint" checked> Remove interlacing lines (recommended for camcorder video)</label>
       <p class="hint">Estimated sizes are approximate. The quality is never pushed above what the original file already has, so an already-small video shrinks less.</p>
     </div>
 
@@ -335,11 +367,12 @@ audio { width: 100%; display: block; margin-top: 12px; }
     </div>
   </section>
 
-  <p class="foot">Fast mode reads MP4 and MOV files directly and processes them with your device’s video encoder, usually many times faster than playback. Other formats can only be compressed, in real-time mode, which plays the video through once. Transcription uses the Whisper speech model, downloaded once (from Hugging Face, with its software from jsDelivr) and run on your device. <span class="ver">Version 9 · 4 Nov 2026 · <a href="privacy.html">Privacy</a></span></p>
+  <p class="foot">Fast mode reads MP4 and MOV files directly and processes them with your device’s video encoder, usually many times faster than playback. Camcorder MTS files are converted to MP4 first. Other formats can only be compressed, in real-time mode, which plays the video through once. Transcription uses the Whisper speech model, downloaded once (from Hugging Face, with its software from jsDelivr) and run on your device. <span class="ver">Version 10 · 8 Nov 2026 · <a href="privacy.html">Privacy</a></span></p>
 </main>
 
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.js"></script>
+<script src="mts.js"></script>
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
@@ -443,6 +476,12 @@ audio { width: 100%; display: block; margin-top: 12px; }
     var deg = Math.round(Math.atan2(m[1], m[0]) * 180 / Math.PI / 90) * 90;
     return ((deg % 360) + 360) % 360;
   }
+  // Frames per second from the typical frame duration; the track's total duration can be padded
+  // (for example by B-frame delay in copied video).
+  function frameRate(samples, timescale) {
+    var d = samples.slice(0, 240).map(function (x) { return x.duration; }).filter(function (x) { return x > 0; }).sort(function (a, b) { return a - b; });
+    return d.length ? timescale / d[d.length >> 1] : 0;
+  }
   function audioDecoderSupported(cfg) {
     return AudioDecoder.isConfigSupported(cfg).then(function (r) { return r.supported; }, function () { return false; });
   }
@@ -465,11 +504,17 @@ audio { width: 100%; display: block; margin-top: 12px; }
       }
       var fast = {
         iso: p.iso, vt: vt, vtrak: vtrak, at: null, atrak: null, dur: dur, keys: keys, keyPts: keyPts,
-        w: vt.video.width, h: vt.video.height, fps: vs.length / (vt.duration / vt.timescale || dur),
+        w: vt.video.width, h: vt.video.height, fps: frameRate(vs, vts) || vs.length / (vt.duration / vt.timescale || dur),
         srcKind: codecKind(vt.codec) || 'avc', copyable: !!codecKind(vt.codec), srcVideoBps: vbytes * 8 / dur, audioBytes: 0,
         rotation: rotationOf(vt), movieTimescale: p.info.timescale,
         decoderConfig: { codec: vt.codec, codedWidth: vt.video.width, codedHeight: vt.video.height, description: videoDescription(vtrak) }
       };
+      // interlaced H.264 (camcorders) is flagged in the SPS inside avcC
+      fast.interlaced = false;
+      try {
+        var dsc = fast.decoderConfig.description;
+        if (window.MTS && fast.srcKind === 'avc' && dsc && dsc.length > 8 && (dsc[5] & 31)) fast.interlaced = MTS.parseSps(dsc.subarray(8, 8 + ((dsc[6] << 8) | dsc[7]))).interlaced;
+      } catch (e) {}
       return VideoDecoder.isConfigSupported(fast.decoderConfig).then(function (r) { return r.supported; }, function () { return false; }).then(function (ok) {
         if (!ok) return null;
         if (!at) return fast;
@@ -676,6 +721,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
           ' and is then kept by the browser. Speed depends on your device: a fast laptop transcribes several minutes of audio per minute, an older Chromebook can take about as long as the audio or longer. You can stop at any time and keep what is done, or transcribe a long video in pieces with From and To.';
       }
     }
+    $('c-deint-row').hidden = !(S.fast && S.fast.interlaced);
     refreshMode();
     refreshAction();
   }
@@ -766,13 +812,21 @@ audio { width: 100%; display: block; margin-top: 12px; }
     if (S.url) URL.revokeObjectURL(S.url);
     clearResults();
     S.url = null; S.meta = S.fast = S.encoders = S.audioEnc = null;
-    ['info', 'tune', 'run', 'result', 'prog'].forEach(function (id) { $(id).hidden = true; });
+    ['info', 'tune', 'run', 'result', 'prog', 'cam', 'conv'].forEach(function (id) { $(id).hidden = true; });
   }
 
   function onFile(file) {
     if (!file || S.job) return;
+    // camcorder files are recognised by their packet structure, whatever they are called
+    isTransportStream(file).then(function (size) {
+      if (size && !/\.(mp4|m4v|mov|webm|mkv)$/i.test(file.name)) { reset(); showError(''); S.converted = null; showCamcorder(file, size); }
+      else onFileNormal(file, null);
+    });
+  }
+  function onFileNormal(file, convertedFrom) {
     reset(); showError('');
-    if (file.type && file.type.indexOf('video/') !== 0 && !/\.(mkv|mov|mp4|m4v|webm)$/i.test(file.name)) { showError('That file is not a video.'); return; }
+    S.converted = convertedFrom ? { file: file, from: convertedFrom } : null;
+    if (file.type && file.type.indexOf('video/') !== 0 && !/\.(mkv|mov|mp4|m4v|webm|mts|m2ts)$/i.test(file.name)) { showError('That file is not a video.'); return; }
     S.file = file; S.url = URL.createObjectURL(file);
     $('fname').textContent = file.name;
     $('reading').hidden = false;
@@ -826,6 +880,10 @@ audio { width: 100%; display: block; margin-top: 12px; }
       if (!S.fast) { $('c-audio').hidden = $('c-audio-label').hidden = true; }
       refreshEstimates();
       ['info', 'tune', 'run'].forEach(function (id) { $(id).hidden = false; });
+      if (S.converted) {
+        $('conv').hidden = false;
+        $('conv-text').textContent = 'From ' + S.converted.from.name + ' (' + fmtSize(S.converted.from.size) + '). Same picture quality; plays in any player. Save it as it is, or make it smaller with Compress video below.';
+      }
     }).catch(function (e) {
       $('reading').hidden = true;
       reset();
@@ -914,10 +972,11 @@ audio { width: 100%; display: block; margin-top: 12px; }
     };
   }
 
-  // Adds an edit list to the video track so it starts playing at its first frame. Copied video with
-  // B-frames begins with a decode delay; without this the picture would lag the sound by that delay.
-  // The muxer writes the index (moov) last, so growing it moves no media data.
-  function addEditList(blob, mediaUs) {
+  // Adds edit lists so tracks start in step. The video track skips its decode delay (copied video
+  // with B-frames begins late; without this the picture would lag the sound), and the audio track can
+  // be delayed by audioDelayUs when the sound starts after the picture. The muxer writes the index
+  // (moov) last, so growing it moves no media data.
+  function addEditList(blob, mediaUs, audioDelayUs) {
     function head(off) {
       return blob.slice(off, off + 16).arrayBuffer().then(function (b) {
         var d = new DataView(b), size = d.getUint32(0);
@@ -930,6 +989,16 @@ audio { width: 100%; display: block; margin-top: 12px; }
     function findMoov(off) {
       if (off >= blob.size) return Promise.resolve(null);
       return head(off).then(function (h) { return h.type === 'moov' ? { off: off, size: h.size } : findMoov(off + h.size); });
+    }
+    function elst(entries) {
+      var n = 8 + 8 + 8 + 12 * entries.length, v = new DataView(new ArrayBuffer(n));
+      v.setUint32(0, n); v.setUint32(4, 0x65647473);            // 'edts'
+      v.setUint32(8, n - 8); v.setUint32(12, 0x656c7374);       // 'elst', version 0
+      v.setUint32(16, 0); v.setUint32(20, entries.length);
+      entries.forEach(function (e, k) {
+        v.setUint32(24 + 12 * k, Math.max(0, e[0])); v.setInt32(28 + 12 * k, e[1]); v.setUint32(32 + 12 * k, 0x00010000);
+      });
+      return new Uint8Array(v.buffer);
     }
     return findMoov(0).then(function (m) {
       if (!m || m.off + m.size !== blob.size) return blob;
@@ -944,31 +1013,35 @@ audio { width: 100%; display: block; margin-top: 12px; }
         function find(list, t) { for (var i = 0; i < list.length; i++) if (list[i].t === t) return list[i]; return null; }
         var top = kids(0, buf.byteLength), mvhd = find(top, 'mvhd');
         var movieTs = d.getUint32(mvhd.o + (u8[mvhd.o + 8] ? 28 : 20));
-        for (var i = 0; i < top.length; i++) {
-          if (top[i].t !== 'trak') continue;
-          var trak = top[i], tk = kids(trak.o, trak.s), mdia = find(tk, 'mdia'), tkhd = find(tk, 'tkhd');
-          if (!mdia || !tkhd || find(tk, 'edts')) continue;
+        var inserts = [];
+        top.forEach(function (trak) {
+          if (trak.t !== 'trak') return;
+          var tk = kids(trak.o, trak.s), mdia = find(tk, 'mdia'), tkhd = find(tk, 'tkhd');
+          if (!mdia || !tkhd || find(tk, 'edts')) return;
           var mk = kids(mdia.o, mdia.s), hdlr = find(mk, 'hdlr'), mdhd = find(mk, 'mdhd');
-          if (!hdlr || !mdhd || type(hdlr.o + 12) !== 'vide') continue;   // handler_type sits 16 bytes in
+          if (!hdlr || !mdhd) return;
+          var handler = type(hdlr.o + 12);   // handler_type sits 16 bytes in
           var mediaTs = d.getUint32(mdhd.o + (u8[mdhd.o + 8] ? 28 : 20));
           var tkDur = u8[tkhd.o + 8] ? d.getUint32(tkhd.o + 36) * 4294967296 + d.getUint32(tkhd.o + 40) : d.getUint32(tkhd.o + 28);
-          var edts = new DataView(new ArrayBuffer(36));
-          edts.setUint32(0, 36); edts.setUint32(4, 0x65647473);   // 'edts'
-          edts.setUint32(8, 28); edts.setUint32(12, 0x656c7374);  // 'elst', version 0
-          edts.setUint32(16, 0); edts.setUint32(20, 1);
-          edts.setUint32(24, Math.max(0, tkDur - Math.round(mediaUs * movieTs / 1e6)));
-          edts.setInt32(28, Math.round(mediaUs * mediaTs / 1e6));
-          edts.setUint32(32, 0x00010000);
-          var at = tkhd.o + tkhd.s, out = new Uint8Array(buf.byteLength + 36);
-          out.set(u8.subarray(0, at), 0);
-          out.set(new Uint8Array(edts.buffer), at);
-          out.set(u8.subarray(at), at + 36);
-          var od = new DataView(out.buffer);
-          od.setUint32(0, buf.byteLength + 36);
-          od.setUint32(trak.o, trak.s + 36);
-          return new Blob([blob.slice(0, m.off), out], { type: blob.type });
-        }
-        return blob;
+          var box = null;
+          if (handler === 'vide' && mediaUs > 0) box = elst([[tkDur - Math.round(mediaUs * movieTs / 1e6), Math.round(mediaUs * mediaTs / 1e6)]]);
+          if (handler === 'soun' && audioDelayUs > 0) box = elst([[Math.round(audioDelayUs * movieTs / 1e6), -1], [tkDur, 0]]);
+          if (box) inserts.push({ at: tkhd.o + tkhd.s, trak: trak, box: box });
+        });
+        if (!inserts.length) return blob;
+        // apply from the end so earlier offsets stay valid
+        inserts.sort(function (a, b) { return b.at - a.at; });
+        var out = u8;
+        inserts.forEach(function (ins) {
+          var next = new Uint8Array(out.length + ins.box.length);
+          next.set(out.subarray(0, ins.at), 0);
+          next.set(ins.box, ins.at);
+          next.set(out.subarray(ins.at), ins.at + ins.box.length);
+          new DataView(next.buffer).setUint32(ins.trak.o, ins.trak.s + ins.box.length);
+          out = next;
+        });
+        new DataView(out.buffer).setUint32(0, out.length);
+        return new Blob([blob.slice(0, m.off), out], { type: blob.type });
       });
     });
   }
@@ -1200,7 +1273,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
     var started = performance.now();
     transcode({
       job: job,
-      video: { mode: 'encode', enc: enc, dims: dims, vbps: bitrateFor(preset, dims), rotation: F.rotation },
+      video: { mode: 'encode', enc: enc, dims: dims, vbps: bitrateFor(preset, dims), rotation: F.rotation, draw: deinterlaceDraw() },
       audio: audio,
       onProgress: function (p, media, elapsed) { setProgress(p, elapsed, media); },
       // Stop early when the output is on course to be no smaller than the original.
@@ -1238,8 +1311,23 @@ audio { width: 100%; display: block; margin-top: 12px; }
   }
 
   // Draws one source frame into a vertical 9:16 canvas, upright, cropped or fitted, with an optional label.
+  // Blends each pair of interlaced lines: drawing at half height averages the two fields, which
+  // removes the comb pattern of interlaced camcorder video at the cost of some vertical detail.
+  function makeDeinterlacer(w, h) {
+    var half = new OffscreenCanvas(w, Math.max(1, Math.round(h / 2))), hc = half.getContext('2d');
+    hc.imageSmoothingEnabled = true; hc.imageSmoothingQuality = 'high';
+    return function (frame) { hc.drawImage(frame, 0, 0, half.width, half.height); return half; };
+  }
+  function deinterlaceDraw() {
+    var F = S.fast;
+    if (!F.interlaced || !$('c-deint').checked) return null;
+    var deint = makeDeinterlacer(F.w, F.h);
+    return function (ctx, frame, W, H) { ctx.drawImage(deint(frame), 0, 0, W, H); };
+  }
+
   function makeVerticalDrawer(framing, label) {
     var F = S.fast, rot = F.rotation, dw = rot % 180 ? F.h : F.w, dh = rot % 180 ? F.w : F.h;
+    var deint = F.interlaced ? makeDeinterlacer(F.w, F.h) : null;
     var up = rot ? new OffscreenCanvas(dw, dh) : null, upc = up && up.getContext('2d');
     var small = framing === 'blur' ? new OffscreenCanvas(36, 64) : null, sc = small && small.getContext('2d');
     function cover(c, src, W, H) {
@@ -1247,12 +1335,12 @@ audio { width: 100%; display: block; margin-top: 12px; }
       c.drawImage(src, (W - w) / 2, (H - h) / 2, w, h);
     }
     return function (ctx, frame, W, H) {
-      var src = frame;
+      var src = deint ? deint(frame) : frame;
       if (up) {
         upc.save();
         upc.translate(dw / 2, dh / 2);
         upc.rotate(rot * Math.PI / 180);
-        upc.drawImage(frame, -F.w / 2, -F.h / 2, F.w, F.h);
+        upc.drawImage(src, -F.w / 2, -F.h / 2, F.w, F.h);
         upc.restore();
         src = up;
       }
@@ -1775,6 +1863,247 @@ audio { width: 100%; display: block; margin-top: 12px; }
     }
   }
 
+  /* ---------- camcorder MTS/M2TS: convert to MP4 ---------- */
+
+  // The picture is copied from the transport stream as it is (web/mts.js). The sound, usually
+  // Dolby AC-3 that browsers can't play, is converted to AAC by ffmpeg.wasm, which reads the file
+  // straight from disk. Its core (about 32 MB) loads from jsDelivr only when it is needed.
+  var FFMPEG_CORE = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm/';
+  var AAC_RATES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+  var AUDIO_NAMES = { ac3: 'Dolby Digital (AC-3)', eac3: 'Dolby Digital Plus', aac: 'AAC', 'aac-latm': 'AAC', mp2: 'MPEG audio', lpcm: 'PCM' };
+
+  function isTransportStream(file) {
+    if (!window.MTS) return Promise.resolve(0);
+    return file.slice(0, 1024).arrayBuffer().then(function (b) { return MTS.packetSize(new Uint8Array(b)); }, function () { return 0; });
+  }
+  // Reads the start and end of the file for the streams, picture size, first timestamps and length.
+  function scanTs(file, size) {
+    function scan(blob) {
+      return blob.arrayBuffer().then(function (buf) {
+        var r = { streams: null, audioPts: null, first: null, last: null, sps: null };
+        var pairer = new MTS.FramePairer(function (smp) { if (!r.first && smp.pts != null) r.first = smp; if (smp.pts != null) r.last = smp; r.sps = smp.sps; });
+        var dmx = new MTS.Demuxer(size, {
+          onStreams: function (st) { r.streams = st; },
+          onAudioPts: function (pid, pts) { if (r.audioPts == null) r.audioPts = pts; },
+          onAccessUnit: function (au) { pairer.push(au); }
+        });
+        dmx.push(new Uint8Array(buf)); dmx.end(); pairer.end();
+        return r;
+      });
+    }
+    var CH = 8 * 1048576;
+    return Promise.all([scan(file.slice(0, CH)), file.size > CH ? scan(file.slice(file.size - CH)) : null]).then(function (r) {
+      var h = r[0], t = r[1] || r[0];
+      if (h.first && t.last) {
+        var span = t.last.pts - h.first.pts;
+        if (span < 0) span += 8589934592;   // the 33-bit clock wrapped during the recording
+        h.duration = span / 90000;
+      }
+      return h;
+    });
+  }
+
+  function showCamcorder(file, size) {
+    S.cam = { file: file, size: size, scan: null };
+    $('cam').hidden = false;
+    $('cam-name').textContent = file.name;
+    $('cam-size').textContent = fmtSize(file.size);
+    ['cam-dur', 'cam-res', 'cam-audio'].forEach(function (id) { $(id).textContent = '…'; });
+    $('cam-err').hidden = true; $('cam-prog').hidden = true; $('cam-go').disabled = true;
+    scanTs(file, size).then(function (r) {
+      S.cam.scan = r;
+      var streams = r.streams || [], audio = streams.filter(function (x) { return AUDIO_NAMES[x.kind]; })[0];
+      r.audio = audio || null;
+      $('cam-audio').textContent = audio ? AUDIO_NAMES[audio.kind] : 'None';
+      $('cam-dur').textContent = r.duration ? fmtTime(r.duration) : 'Unknown';
+      if (!r.sps) {
+        var mpeg2 = streams.some(function (x) { return /mpeg[12]video/.test(x.kind); });
+        camError(mpeg2 ? 'This camcorder file uses MPEG-2 video (older HDV camcorders), which this app can’t convert yet.' : 'Couldn’t find H.264 video in this file.');
+        $('cam-res').textContent = '–';
+        return;
+      }
+      $('cam-res').textContent = r.sps.width + '×' + r.sps.height + (r.sps.interlaced ? ' interlaced' : '');
+      if (IN_CLAUDE && audio) { camError('Converting camcorder sound needs the GitHub Pages version of this page: rhhas-knust.github.io/Video-Compressor'); return; }
+      $('cam-go').disabled = false;
+    }).catch(function (e) { camError('Couldn’t read this file (' + ((e && e.message) || e) + ').'); });
+  }
+  function camError(msg) { var el = $('cam-err'); el.textContent = msg; el.hidden = !msg; }
+  function camProgress(p, label, started) {
+    var pct = Math.min(100, Math.floor(p * 100)), elapsed = (performance.now() - started) / 1000;
+    $('cam-fill').style.width = (p * 100).toFixed(1) + '%';
+    $('cam-pct').textContent = label + ' ' + pct + '%';
+    $('cam-eta').textContent = p > 0.02 && elapsed > 3 ? 'about ' + fmtTime(elapsed / p - elapsed) + ' left' : '';
+  }
+
+  function loadFfmpeg(onStatus) {
+    var here = location.href;
+    return Promise.all([import(new URL('vendor/ffmpeg/index.js', here).href), import(new URL('vendor/ffmpeg-util/index.js', here).href)]).then(function (mods) {
+      var util = mods[1];
+      return Promise.all([
+        util.toBlobURL(FFMPEG_CORE + 'ffmpeg-core.js', 'text/javascript'),
+        util.toBlobURL(FFMPEG_CORE + 'ffmpeg-core.wasm', 'application/wasm', true, function (e) {
+          if (e.total) onStatus(e.received / e.total);
+        })
+      ]).then(function (urls) {
+        var ff = new mods[0].FFmpeg();
+        return ff.load({ coreURL: urls[0], wasmURL: urls[1] }).then(function () { return ff; });
+      });
+    });
+  }
+  function parseAdts(d) {
+    var frames = [], i = 0, cfg = null;
+    while (i + 7 <= d.length) {
+      if (d[i] !== 0xff || (d[i + 1] & 0xf6) !== 0xf0) { i++; continue; }
+      var hdr = d[i + 1] & 1 ? 7 : 9, profile = (d[i + 2] >> 6) + 1, sri = (d[i + 2] >> 2) & 15;
+      var ch = ((d[i + 2] & 1) << 2) | (d[i + 3] >> 6), len = ((d[i + 3] & 3) << 11) | (d[i + 4] << 3) | (d[i + 5] >> 5);
+      if (len < hdr || i + len > d.length) break;
+      if (!cfg) cfg = { sampleRate: AAC_RATES[sri], channels: ch, description: new Uint8Array([(profile << 3) | (sri >> 1), ((sri & 1) << 7) | (ch << 3)]) };
+      frames.push(d.subarray(i + hdr, i + len));
+      i += len;
+    }
+    return cfg ? { frames: frames, config: cfg } : null;
+  }
+  // Converts the first audio stream to stereo AAC with ffmpeg.wasm, reading the file from disk.
+  function extractAac(file, duration, onProgress, job) {
+    var ff = null;
+    return loadFfmpeg(function (p) { onProgress(0.1 * p, 'Downloading the sound converter (first time only)'); }).then(function (f) {
+      ff = f; job.ff = f;
+      if (job.cancelled) throw new Error('cancelled');
+      ff.on('log', function (e) {
+        var m = /time=(\d+):(\d+):(\d+\.?\d*)/.exec(e.message || '');
+        if (m && duration) onProgress(0.1 + 0.9 * Math.min(1, (+m[1] * 3600 + +m[2] * 60 + +m[3]) / duration), 'Converting the sound');
+      });
+      return ff.createDir('/in');
+    }).then(function () {
+      return ff.mount('WORKERFS', { files: [file] }, '/in');
+    }).then(function () {
+      return ff.exec(['-i', '/in/' + file.name, '-map', '0:a:0', '-vn', '-ac', '2', '-c:a', 'aac', '-b:a', '192k', '-f', 'adts', '/audio.aac']);
+    }).then(function (code) {
+      if (code !== 0) throw new Error('the sound converter stopped (code ' + code + ')');
+      return ff.readFile('/audio.aac');
+    }).then(function (data) {
+      ff.terminate(); job.ff = null;
+      var aac = parseAdts(data);
+      if (!aac) throw new Error('no sound was produced');
+      return aac;
+    }, function (e) {
+      try { if (ff) ff.terminate(); } catch (x) {}
+      job.ff = null;
+      throw e;
+    });
+  }
+
+  // Copies the H.264 video into an MP4 and adds the AAC sound, streaming the output to disk.
+  function muxCamcorder(file, size, scan, aac, onProgress, job) {
+    var sink = new BlobSink('video/mp4'), sps0 = scan.sps;
+    var opts = {
+      target: new Mp4Muxer.StreamTarget({ onData: sink.onData, chunked: true, chunkSize: 8 * 1048576 }),
+      fastStart: false, firstTimestampBehavior: 'offset',
+      video: { codec: 'avc', width: sps0.width, height: sps0.height }
+    };
+    if (aac) opts.audio = { codec: 'aac', numberOfChannels: aac.config.channels, sampleRate: aac.config.sampleRate };
+    var muxer = new Mp4Muxer.Muxer(opts);
+    var base = null, firstPts = 0, firstCtoUs = 0, prev = null, lastDts = -Infinity, typical = 3003, count = 0, metaSent = false;
+    var frameUs = aac ? 1024 / aac.config.sampleRate * 1e6 : 0, ai = 1, audioDelayUs = 0, aOffsetUs = 0;
+    function us(t) { return Math.round((t - base) * 100 / 9); }
+
+    function startAudio() {
+      // Line the sound up with the first picture: drop sound recorded before it, or delay the
+      // sound track (with an edit list) when it starts later. Frame 0 is the encoder's priming.
+      var deltaUs = (scan.audioPts - firstPts) * 100 / 9;
+      if (deltaUs < 0) ai += Math.round(-deltaUs / frameUs);
+      else audioDelayUs = Math.round(deltaUs);
+      aOffsetUs = us(firstPts);
+    }
+    var aCount = 0;   // sound frames written so far
+    function pumpAudio(untilUs) {
+      if (!aac) return;
+      while (ai < aac.frames.length) {
+        var ts = aOffsetUs + Math.round(aCount * frameUs);
+        if (ts > untilUs) break;
+        var meta;
+        if (!aCount) meta = { decoderConfig: { codec: 'mp4a.40.2', sampleRate: aac.config.sampleRate, numberOfChannels: aac.config.channels, description: aac.config.description } };
+        muxer.addAudioChunkRaw(aac.frames[ai], 'key', ts, Math.round(frameUs), meta);
+        ai++; aCount++;
+      }
+    }
+    function write(smp, dur) {
+      var meta;
+      if (!metaSent) {
+        meta = { decoderConfig: { codec: MTS.codecString(smp.sps), codedWidth: smp.sps.width, codedHeight: smp.sps.height, description: MTS.avcC(smp.sps, smp.pps) } };
+        metaSent = true;
+      }
+      var pts = us(smp.pts), cto = pts - us(smp.dts);
+      if (!count) firstCtoUs = cto;
+      muxer.addVideoChunkRaw(MTS.toLengthPrefixed(smp.nals), smp.key ? 'key' : 'delta', pts, Math.max(1, Math.round(dur * 100 / 9)), meta, cto);
+      count++;
+      pumpAudio(pts + 500000);
+    }
+    var pairer = new MTS.FramePairer(function (smp) {
+      if (base === null) {
+        if (!smp.key || smp.pts == null || !smp.pps) return;   // start at the first keyframe with timestamps
+        base = smp.dts; firstPts = smp.pts;
+        if (aac && scan.audioPts != null) startAudio();
+      }
+      if (smp.pts == null) { smp.pts = prev.pts + typical; smp.dts = prev.dts + typical; }
+      if (smp.dts <= lastDts) { var shift = lastDts + typical - smp.dts; smp.dts += shift; smp.pts += shift; }   // a clock jump: keep time moving forward
+      if (prev) {
+        var dd = smp.dts - prev.dts;
+        if (dd > 0 && dd < 90000) typical = dd;
+        write(prev, dd > 0 && dd < 90000 ? dd : typical);
+      }
+      prev = smp; lastDts = smp.dts;
+    });
+    var dmx = new MTS.Demuxer(size, { onAccessUnit: function (au) { pairer.push(au); } });
+    var CH = 4 * 1048576, off = 0;
+    return (function next() {
+      if (job.cancelled) return Promise.reject(new Error('cancelled'));
+      if (off >= file.size) {
+        dmx.end(); pairer.end();
+        if (!prev) throw new Error('no video frames found');
+        write(prev, typical);
+        pumpAudio(Infinity);
+        muxer.finalize();
+        return addEditList(sink.toBlob(), firstCtoUs, audioDelayUs);
+      }
+      return file.slice(off, off + CH).arrayBuffer().then(function (b) {
+        off += b.byteLength;
+        dmx.push(new Uint8Array(b));
+        onProgress(off / file.size);
+        return next();
+      });
+    })();
+  }
+
+  function convertCamcorder() {
+    var cam = S.cam, ext = $('cam-ext').value, started = performance.now();
+    var hasAudio = !!cam.scan.audio && cam.scan.audioPts != null;
+    var job = S.job = { cancelled: false, ff: null, cancel: function () { job.cancelled = true; if (job.ff) { try { job.ff.terminate(); } catch (e) {} } } };
+    $('cam-go').disabled = true; $('cam-cancel').hidden = false; $('cam-prog').hidden = false; camError('');
+    camProgress(0, hasAudio ? 'Preparing' : 'Copying the picture', started);
+    try { navigator.wakeLock && navigator.wakeLock.request('screen').then(function (l) { job.lock = l; }, function () {}); } catch (e) {}
+    var audioShare = hasAudio ? 0.35 : 0;
+    (hasAudio ? extractAac(cam.file, cam.scan.duration, function (p, label) { camProgress(p * audioShare, label, started); }, job) : Promise.resolve(null)).then(function (aac) {
+      if (job.cancelled) throw new Error('cancelled');
+      return muxCamcorder(cam.file, cam.size, cam.scan, aac, function (p) { camProgress(audioShare + (1 - audioShare) * p, 'Copying the picture', started); }, job);
+    }).then(function (blob) {
+      S.job = null;
+      try { if (job.lock) job.lock.release(); } catch (e) {}
+      var name = cam.file.name.replace(/\.[^.]+$/, '') + '.' + ext;
+      onFileNormal(new File([blob], name, { type: 'video/mp4' }), cam.file);
+    }).catch(function (e) {
+      S.job = null;
+      try { if (job.lock) job.lock.release(); } catch (x) {}
+      $('cam-go').disabled = false; $('cam-cancel').hidden = true; $('cam-prog').hidden = true;
+      if (job.cancelled) return;
+      console.error(e);
+      var msg = (e && e.message) || String(e);
+      camError(/fetch|network|import|load/i.test(msg)
+        ? 'Couldn’t download the sound converter (' + msg + '). Check your internet connection and try again; it is only downloaded once.'
+        : 'The conversion stopped (' + msg + ').');
+    });
+  }
+
   /* ---------- real-time mode: MediaRecorder ---------- */
 
   function compressRealtime() {
@@ -1949,6 +2278,10 @@ audio { width: 100%; display: block; margin-top: 12px; }
     if (S.tool === 'audio') runExtract(); else if (S.tool === 'split') runSplit(); else if (S.tool === 'transcribe') runTranscribe(); else runCompress();
   });
   $('cancel').addEventListener('click', function () { if (S.job && S.job.cancel) S.job.cancel(); });
+  $('cam-go').addEventListener('click', function () { if (!S.job && S.cam && S.cam.scan) convertCamcorder(); });
+  $('cam-cancel').addEventListener('click', function () { if (S.job && S.job.cancel) S.job.cancel(); });
+  $('cam-ext').addEventListener('change', function () { $('cam-go').textContent = 'Convert to ' + $('cam-ext').value.toUpperCase(); });
+  $('conv-save').addEventListener('click', function () { if (S.converted) saveOne({ blob: S.converted.file, name: S.converted.file.name }); });
   $('save').addEventListener('click', function () { if (S.results.length > 1) saveAll(); else if (S.results[0]) saveOne(S.results[0]); });
   $('again').addEventListener('click', function () { $('result').hidden = true; $('tune').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
 })();
