@@ -147,6 +147,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
 .transcript { max-height: 45vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 .transcript p { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: baseline; }
 .transcript p span { min-width: 0; }
+.transcript p small, .points li small { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
 </style>
 
 
@@ -158,11 +159,11 @@ audio { width: 100%; display: block; margin-top: 12px; }
   </header>
 
   <section class="step" aria-labelledby="s1">
-    <div class="label" id="s1">Step 1 · Choose a video</div>
+    <div class="label" id="s1">Step 1 · Choose a video or audio file</div>
     <label class="drop" id="drop">
-      <input type="file" id="file" accept="video/*,.mkv,.mov,.mts,.m2ts">
-      <strong>Select a video file</strong>
-      <span>or drop one here. MP4, MOV and camcorder MTS files all work.</span>
+      <input type="file" id="file" accept="video/*,audio/*,.mkv,.mov,.mts,.m2ts">
+      <strong>Select a video or audio file</strong>
+      <span>or drop one here. MP4, MOV, camcorder MTS and audio files all work.</span>
     </label>
     <div class="panel" id="info" hidden>
       <div class="fname" id="fname"></div>
@@ -204,6 +205,37 @@ audio { width: 100%; display: block; margin-top: 12px; }
         <div class="stats"><span id="cam-pct"></span><span id="cam-eta"></span></div>
       </div>
       <div class="notice" id="cam-err" hidden style="margin-top:12px"></div>
+    </div>
+    <div class="panel" id="aud" hidden>
+      <div class="fname" id="aud-name"></div>
+      <dl class="fileinfo" style="margin:0">
+        <div><dt>Size</dt><dd id="aud-size"></dd></div>
+        <div><dt>Length</dt><dd id="aud-dur">…</dd></div>
+        <div><dt>Format</dt><dd id="aud-fmt"></dd></div>
+        <div><dt>New size</dt><dd id="aud-est">…</dd></div>
+      </dl>
+      <div class="mode"><span class="chip">Audio file</span><span>Make this audio file smaller. It is converted on your device and never uploaded.</span></div>
+      <div class="row" style="margin-top:12px">
+        <label for="aud-q">Quality</label>
+        <select id="aud-q">
+          <option value="192">High (192 kbps)</option>
+          <option value="128" selected>Balanced (128 kbps)</option>
+          <option value="64">Voice (64 kbps, mono)</option>
+          <option value="32">Smallest voice (32 kbps, mono)</option>
+        </select>
+        <label for="aud-out">Save as</label>
+        <select id="aud-out">
+          <option value="mp3">MP3 (plays everywhere)</option>
+          <option value="m4a">M4A / AAC (better sound at the same size)</option>
+        </select>
+        <button id="aud-go">Compress audio</button>
+        <button id="aud-cancel" class="secondary" hidden>Cancel</button>
+      </div>
+      <div id="aud-prog" hidden style="margin-top:12px">
+        <div class="bar"><i id="aud-fill"></i></div>
+        <div class="stats"><span id="aud-pct"></span><span id="aud-eta"></span></div>
+      </div>
+      <div class="notice" id="aud-err" hidden style="margin-top:12px"></div>
     </div>
     <div class="notice" id="fileerr" hidden></div>
     <p class="hint" id="reading" hidden>Reading the file…</p>
@@ -291,6 +323,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
         <label for="t-lang">Language</label>
         <select id="t-lang">
           <option value="en">English</option>
+          <option value="twi">Twi (Akan)</option>
           <option value="">Detect automatically</option>
           <option value="french">French</option>
           <option value="spanish">Spanish</option>
@@ -301,7 +334,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
           <option value="chinese">Chinese</option>
           <option value="swahili">Swahili</option>
         </select>
-        <label for="t-model">Accuracy</label>
+        <label for="t-model" id="t-model-label">Accuracy</label>
         <select id="t-model">
           <option value="tiny">Fast (about 40 MB download)</option>
           <option value="base">More accurate (about 80 MB download, slower)</option>
@@ -313,6 +346,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
         <label for="t-to">To</label>
         <input type="text" id="t-to" value="" inputmode="numeric" aria-describedby="t-est">
       </div>
+      <label class="check" id="t-translate-row" hidden><input type="checkbox" id="t-translate" checked> Add an English translation under each line</label>
       <div class="estimate" id="t-est"></div>
       <p class="hint" id="t-hint"></p>
       <div class="notice" id="t-unavailable" hidden></div>
@@ -356,6 +390,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
           <button id="t-copy" class="secondary">Copy transcript</button>
           <button id="t-save-txt" class="secondary">Save transcript (.txt)</button>
           <button id="t-save-srt" class="secondary">Save subtitles (.srt)</button>
+          <button id="t-save-srt-en" class="secondary" hidden>Save English subtitles (.srt)</button>
           <button id="t-save-notes" class="secondary">Save notes (.txt)</button>
         </div>
       </div>
@@ -367,7 +402,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
     </div>
   </section>
 
-  <p class="foot">Fast mode reads MP4 and MOV files directly and processes them with your device’s video encoder, usually many times faster than playback. Camcorder MTS files are converted to MP4 first. Other formats can only be compressed, in real-time mode, which plays the video through once. Transcription uses the Whisper speech model, downloaded once (from Hugging Face, with its software from jsDelivr) and run on your device. <span class="ver">Version 10 · 8 Nov 2026 · <a href="privacy.html">Privacy</a></span></p>
+  <p class="foot">Fast mode reads MP4 and MOV files directly and processes them with your device’s video encoder, usually many times faster than playback. Camcorder MTS files are converted to MP4 first, and audio files can be made smaller as MP3 or M4A. Other formats can only be compressed, in real-time mode, which plays the video through once. Transcription uses the Whisper speech model, downloaded once (from Hugging Face, with its software from jsDelivr) and run on your device. <span class="ver">Version 12 · 12 Nov 2026 · <a href="privacy.html">Privacy</a></span></p>
 </main>
 
 <script src="vendor/mp4box.all.min.js"></script>
@@ -710,14 +745,17 @@ audio { width: 100%; display: block; margin-top: 12px; }
         ' YouTube Shorts allows up to 3 minutes, TikTok up to 10.';
 
       // transcribe
-      var tr = transcribeRange();
-      $('t-unavailable').hidden = !IN_CLAUDE;
+      var tr = transcribeRange(), twi = $('t-lang').value === 'twi';
+      $('t-model').hidden = $('t-model-label').hidden = twi;
+      $('t-translate-row').hidden = !twi || !LOCAL_MODELS['twi-en'];
+      $('t-unavailable').hidden = !IN_CLAUDE && !(twi && !LOCAL_MODELS['twi-asr']);
       if (IN_CLAUDE) $('t-unavailable').textContent = 'Transcription downloads a speech model, which this claude.ai view does not allow. Open the GitHub Pages version of this page to transcribe: rhhas-knust.github.io/Video-Compressor';
+      else if (twi && !LOCAL_MODELS['twi-asr']) $('t-unavailable').textContent = 'The Twi speech model isn’t installed yet. Train it with training/train_twi_model.ipynb in Google Colab, then add its twi-asr folder to web/models/.';
       if (!F.atrak) { $('t-est').textContent = 'This video has no audio track.'; $('t-hint').textContent = ''; }
       else if (!tr) { $('t-est').textContent = 'Enter the times as minutes:seconds, for example 1:30 or 1:05:00.'; $('t-hint').textContent = ''; }
       else {
         $('t-est').textContent = 'Transcribing ' + fmtTime(tr.to - tr.from) + ' of audio (' + stamp(tr.from) + ' to ' + stamp(tr.to) + ')';
-        $('t-hint').textContent = 'The first time, the speech model downloads ' + ($('t-model').value === 'base' ? 'about 80 MB' : 'about 40 MB') +
+        $('t-hint').textContent = 'The first time, the speech model downloads ' + (twi ? 'about 80 MB' + (LOCAL_MODELS['twi-en'] && $('t-translate').checked ? ' (plus about 80 MB for the translator)' : '') : $('t-model').value === 'base' ? 'about 80 MB' : 'about 40 MB') +
           ' and is then kept by the browser. Speed depends on your device: a fast laptop transcribes several minutes of audio per minute, an older Chromebook can take about as long as the audio or longer. You can stop at any time and keep what is done, or transcribe a long video in pieces with From and To.';
       }
     }
@@ -750,7 +788,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
       go.disabled = !!S.job || !S.fast;
     } else if (S.tool === 'transcribe') {
       go.textContent = 'Transcribe';
-      go.disabled = !!S.job || !S.fast || !S.fast.atrak || !transcribeRange() || IN_CLAUDE;
+      go.disabled = !!S.job || !S.fast || !S.fast.atrak || !transcribeRange() || IN_CLAUDE || ($('t-lang').value === 'twi' && !LOCAL_MODELS['twi-asr']);
     } else {
       go.textContent = 'Compress video';
       go.disabled = !!S.job;
@@ -812,11 +850,13 @@ audio { width: 100%; display: block; margin-top: 12px; }
     if (S.url) URL.revokeObjectURL(S.url);
     clearResults();
     S.url = null; S.meta = S.fast = S.encoders = S.audioEnc = null;
-    ['info', 'tune', 'run', 'result', 'prog', 'cam', 'conv'].forEach(function (id) { $(id).hidden = true; });
+    ['info', 'tune', 'run', 'result', 'prog', 'cam', 'conv', 'aud'].forEach(function (id) { $(id).hidden = true; });
+    S.aud = null;
   }
 
   function onFile(file) {
     if (!file || S.job) return;
+    if (isAudioFile(file)) { reset(); showError(''); S.converted = null; showAudioFile(file); return; }
     // camcorder files are recognised by their packet structure, whatever they are called
     isTransportStream(file).then(function (size) {
       if (size && !/\.(mp4|m4v|mov|webm|mkv)$/i.test(file.name)) { reset(); showError(''); S.converted = null; showCamcorder(file, size); }
@@ -1438,8 +1478,24 @@ audio { width: 100%; display: block; margin-top: 12px; }
     return { from: Math.min(from, dur), to: Math.min(to, dur) };
   }
   function modelId() {
+    if ($('t-lang').value === 'twi') return 'twi-asr';   // trained on Twi (training/twi_model.py), in web/models/
     // English-only models are noticeably more accurate for English speech.
     return MODELS[$('t-model').value] + ($('t-lang').value === 'en' ? '.en' : '');
+  }
+  // Models trained for this app live in web/models/<name>/ and load from this site, not Hugging Face.
+  var LOCAL_MODELS = {};
+  function checkLocalModels() {
+    ['twi-asr', 'twi-en'].forEach(function (name) {
+      fetch(new URL('models/' + name + '/config.json', location.href).href, { method: 'HEAD' })
+        .then(function (r) { LOCAL_MODELS[name] = r.ok; }, function () { LOCAL_MODELS[name] = false; })
+        .then(function () { if (S.meta) refreshEstimates(); });
+    });
+  }
+  function localModelEnv(T, on) {
+    T.env.allowLocalModels = on;
+    T.env.allowRemoteModels = !on;
+    // a path, not a full URL: transformers.js only treats paths as local files
+    if (on) T.env.localModelPath = new URL('models/', location.href).pathname;
   }
 
   // Loads Whisper with transformers.js from jsDelivr, pinned to one version (it fetches its matching
@@ -1447,6 +1503,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
   // browser's cache. window.__VC_TEST_TRANSCRIBER lets tests stand in for the model.
   function loadTranscriber(id, onStatus) {
     if (window.__VC_TEST_TRANSCRIBER) return Promise.resolve(window.__VC_TEST_TRANSCRIBER);
+    var local = !!LOCAL_MODELS.hasOwnProperty(id);
     if (transcribers[id]) return transcribers[id];
     var files = {};
     function progress(e) {
@@ -1457,15 +1514,17 @@ audio { width: 100%; display: block; margin-top: 12px; }
       onStatus('Downloading the speech model… ' + fmtSize(loaded) + ' of ' + fmtSize(total));
     }
     var p = loadLibrary().then(function (T) {
-      T.env.allowLocalModels = false;
+      localModelEnv(T, local);
       function make(device) {
         var opts = device === 'webgpu'
           ? { device: 'webgpu', dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' }, progress_callback: progress }
           : { device: 'wasm', dtype: 'q8', progress_callback: progress };
         return T.pipeline('automatic-speech-recognition', id, opts);
       }
-      // WebGPU is much faster where the browser has it; fall back to the CPU otherwise.
-      return navigator.gpu ? make('webgpu').catch(function () { return make('wasm'); }) : make('wasm');
+      // WebGPU is much faster where the browser has it; fall back to the CPU otherwise. The Twi model
+      // is exported for the CPU (int8) only.
+      var made = navigator.gpu && !local ? make('webgpu').catch(function () { return make('wasm'); }) : make('wasm');
+      return made.then(function (pipe) { localModelEnv(T, false); return pipe; }, function (e) { localModelEnv(T, false); throw e; });
     });
     transcribers[id] = p;
     p.catch(function () { delete transcribers[id]; });
@@ -1489,7 +1548,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
       return loadLibrary().then(function (T) {
         // a path, not a full URL: transformers.js only treats paths as local files
         T.env.allowLocalModels = true; T.env.allowRemoteModels = false; T.env.localModelPath = new URL(dir).pathname;
-        function restore() { T.env.allowLocalModels = false; T.env.allowRemoteModels = true; }
+        function restore() { localModelEnv(T, false); }
         return Promise.all([
           T.AutoTokenizer.from_pretrained('notes-model'),
           T.AutoModelForSequenceClassification.from_pretrained('notes-model', { dtype: 'q8', device: 'wasm' })
@@ -1499,9 +1558,15 @@ audio { width: 100%; display: block; margin-top: 12px; }
     return notesModelP;
   }
   // The classifier's input: the sentence, then its neighbours. training/notes_model.py builds the same string.
+  // Long lines are cut by words first, so every input stays within the model's 128 tokens (as in
+  // training); this transformers.js version doesn't truncate all of a model's inputs consistently.
+  function firstWords(text, n) {
+    var w = text.split(/\s+/);
+    return w.length > n ? w.slice(0, n).join(' ') : text;
+  }
   function modelInput(sentences, i) {
-    var ctx = [i > 0 ? sentences[i - 1].text : '', i + 1 < sentences.length ? sentences[i + 1].text : ''].filter(Boolean).join(' ');
-    return sentences[i].text + ' [SEP] ' + ctx;
+    var ctx = [i > 0 ? firstWords(sentences[i - 1].text, 20) : '', i + 1 < sentences.length ? firstWords(sentences[i + 1].text, 20) : ''].filter(Boolean).join(' ');
+    return firstWords(sentences[i].text, 50) + ' [SEP] ' + ctx;
   }
   function modelScores(m, sentences) {
     var scores = [], B = 16;
@@ -1609,7 +1674,8 @@ audio { width: 100%; display: block; margin-top: 12px; }
     var WINDOW = 30, segments = [], t = range.from, reader = null, started = 0;
     var job = beginJob('Preparing the speech model…', function () { job.cancelled = true; });
     clearResults();
-    S.transcript = { segments: segments, from: range.from, to: range.from, notes: null };
+    S.transcript = { segments: segments, from: range.from, to: range.from, notes: null, lang: lang,
+      translate: lang === 'twi' && !!LOCAL_MODELS['twi-en'] && $('t-translate').checked, translated: false };
     showTranscript(false);
 
     loadTranscriber(id, function (msg) { $('prog-hint').textContent = msg; }).then(function (transcribe) {
@@ -1628,9 +1694,10 @@ audio { width: 100%; display: block; margin-top: 12px; }
           // Whisper invents words in silence, so quiet stretches are skipped.
           if (rms(chunk, 0, chunk.length) < 0.003) return;
           var opts = { return_timestamps: true, chunk_length_s: 30 };
-          if (lang && lang !== 'en') { opts.language = lang; opts.task = 'transcribe'; }
+          if (lang === 'twi') { opts.language = 'yoruba'; opts.task = 'transcribe'; opts.return_timestamps = false; }   // the Twi model's language slot
+          else if (lang && lang !== 'en') { opts.language = lang; opts.task = 'transcribe'; }
           return Promise.resolve(transcribe(chunk, opts)).then(function (out) {
-            var chunks = (out && out.chunks && out.chunks.length) ? out.chunks : [{ timestamp: [0, winLen], text: (out && out.text) || '' }];
+            var chunks = (out && out.chunks && out.chunks.length) ? out.chunks : splitTimed((out && out.text) || '', winLen);
             chunks.forEach(function (c) {
               var text = (c.text || '').trim();
               if (!text) return;
@@ -1665,6 +1732,15 @@ audio { width: 100%; display: block; margin-top: 12px; }
     });
   }
 
+  // Without timestamps from the model, shares a window's time out over its sentences by length.
+  function splitTimed(text, winLen) {
+    var parts = (text.match(/[^.!?]+[.!?]*/g) || [text]).map(function (x) { return x.trim(); }).filter(Boolean);
+    var total = parts.reduce(function (n, x) { return n + x.length; }, 0) || 1, at = 0;
+    return parts.map(function (x) {
+      var a = at; at += winLen * x.length / total;
+      return { timestamp: [a, at], text: x };
+    });
+  }
   function stamp(sec, withHours) {
     sec = Math.max(0, sec);
     var h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s = Math.floor(sec % 60);
@@ -1702,6 +1778,46 @@ audio { width: 100%; display: block; margin-top: 12px; }
       $('r-points-hint').textContent = 'The important points appear here when the transcript is finished or stopped.';
     }
   }
+  // Translates the Twi lines to English with the app's own translator (web/models/twi-en).
+  var translatorP = null;
+  function loadTranslator() {
+    if (window.__VC_TEST_TRANSLATOR) return Promise.resolve(window.__VC_TEST_TRANSLATOR);
+    if (!translatorP) {
+      translatorP = loadLibrary().then(function (T) {
+        localModelEnv(T, true);
+        return T.pipeline('translation', 'twi-en', { dtype: 'q8', device: 'wasm' })
+          .then(function (pipe) { localModelEnv(T, false); return pipe; }, function (e) { localModelEnv(T, false); throw e; });
+      });
+      translatorP.catch(function () { translatorP = null; });
+    }
+    return translatorP;
+  }
+  function translateSegments(segs, onProgress) {
+    // long lines (a window without punctuation) are translated in pieces of up to 50 words
+    var pieces = [];
+    segs.forEach(function (x, si) {
+      var w = x.text.split(/\s+/);
+      for (var k = 0; k < w.length; k += 50) pieces.push({ seg: si, text: w.slice(k, k + 50).join(' ') });
+      x.en = '';
+    });
+    return loadTranslator().then(function (tr) {
+      var B = 8;
+      return (function next(i) {
+        if (i >= pieces.length) return;
+        var batch = pieces.slice(i, i + B);
+        return Promise.resolve(tr(batch.map(function (x) { return x.text; }), { max_new_tokens: 128 })).then(function (out) {
+          out = Array.isArray(out) ? out : [out];
+          batch.forEach(function (x, k) {
+            var seg = segs[x.seg], t = ((out[k] && out[k].translation_text) || '').trim();
+            seg.en = seg.en ? seg.en + ' ' + t : t;
+          });
+          onProgress(Math.min(pieces.length, i + B), pieces.length);
+          return next(i + B);
+        });
+      })(0);
+    });
+  }
+
   var shownSegments = 0;
   function appendTranscript() {
     var box = $('r-transcript'), segs = S.transcript.segments;
@@ -1710,6 +1826,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
     for (; shownSegments < segs.length; shownSegments++) {
       var sg = segs[shownSegments], p = document.createElement('p'), span = document.createElement('span');
       span.textContent = sg.text;
+      if (sg.en) { var en = document.createElement('small'); en.textContent = sg.en; span.appendChild(en); }
       p.appendChild(tsButton(sg.start)); p.appendChild(span);
       box.appendChild(p);
     }
@@ -1718,6 +1835,18 @@ audio { width: 100%; display: block; margin-top: 12px; }
   }
   function finishTranscript(stopped) {
     var T = S.transcript, segs = T.segments;
+    if (T.lang === 'twi' && T.translate && segs.length && !T.translated) {
+      T.translated = true;
+      $('prog').hidden = false;
+      $('prog-hint').textContent = 'Translating to English…';
+      translateSegments(segs, function (done, total) { setProgress(done / total, 0, 0); $('pct').textContent = 'Translating ' + done + ' of ' + total + ' lines'; })
+        .then(function () { $('r-transcript').textContent = ''; shownSegments = 0; }, function (e) {
+          console.error(e);
+          showError('The English translation couldn’t be made (' + ((e && e.message) || e) + '). The Twi transcript is below.');
+        })
+        .then(function () { finishTranscript(stopped); });
+      return;
+    }
     showTranscript(true);
     appendTranscript();
     $('prog').hidden = true;
@@ -1727,7 +1856,12 @@ audio { width: 100%; display: block; margin-top: 12px; }
     T.notes = null;
     $('r-points').textContent = ''; $('r-topics').textContent = '';
     $('r-points-hint').textContent = segs.length ? 'Picking out the important points…' : 'Not enough speech to pick out important points.';
-    var sentences = buildSentences(segs);
+    // With an English translation, the important points are picked from the English (the notes
+    // model and the rules were made for English); the Twi line is shown under each point.
+    var english = segs.some(function (x) { return x.en; });
+    var sentences = english
+      ? segs.filter(function (x) { return x.en; }).map(function (x) { return { start: x.start, text: x.en, original: x.text }; })
+      : buildSentences(segs);
     (segs.length ? loadNotesModel() : Promise.resolve(null)).then(function (m) {
       return m ? modelScores(m, sentences).then(function (sc) { return { scores: sc, model: true }; }, function (e) { console.warn(e); return { model: false }; }) : { model: false };
     }).then(function (r) {
@@ -1735,6 +1869,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
       renderNotes(T.notes, r.model);
     });
     ['t-copy', 't-save-txt', 't-save-srt'].forEach(function (b) { $(b).disabled = !segs.length; });
+    $('t-save-srt-en').hidden = !english;
     $('t-save-notes').disabled = true;
     finishResult();
   }
@@ -1744,6 +1879,7 @@ audio { width: 100%; display: block; margin-top: 12px; }
     notes.points.forEach(function (pt) {
       var li = document.createElement('li'), span = document.createElement('span');
       span.textContent = pt.text;
+      if (pt.original) { var tw = document.createElement('small'); tw.textContent = pt.original; span.appendChild(tw); }
       li.appendChild(tsButton(pt.start)); li.appendChild(span);
       ul.appendChild(li);
     });
@@ -1828,27 +1964,27 @@ audio { width: 100%; display: block; margin-top: 12px; }
 
   function transcriptText() {
     var T = S.transcript, long = T.to >= 3600;
-    return T.segments.map(function (s) { return '[' + stamp(s.start, long) + '] ' + s.text; }).join('\n') + '\n';
+    return T.segments.map(function (s) { return '[' + stamp(s.start, long) + '] ' + s.text + (s.en ? '\n' + '    ' + s.en : ''); }).join('\n') + '\n';
   }
-  function srtText() {
+  function srtText(english) {
     function t(sec) {
       var ms = Math.round(sec * 1000), h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60, s = Math.floor(ms / 1000) % 60;
       function p(n, w) { n = String(n); while (n.length < w) n = '0' + n; return n; }
       return p(h, 2) + ':' + p(m, 2) + ':' + p(s, 2) + ',' + p(ms % 1000, 3);
     }
     return S.transcript.segments.map(function (s, i) {
-      return (i + 1) + '\n' + t(s.start) + ' --> ' + t(Math.max(s.end, s.start + 0.5)) + '\n' + s.text + '\n';
+      return (i + 1) + '\n' + t(s.start) + ' --> ' + t(Math.max(s.end, s.start + 0.5)) + '\n' + (english ? s.en || s.text : s.text) + '\n';
     }).join('\n');
   }
   function notesText() {
     var T = S.transcript, long = T.to >= 3600;
     var out = 'Important points: ' + S.file.name + '\n\n';
-    T.notes.points.forEach(function (p) { out += '[' + stamp(p.start, long) + '] ' + p.text + '\n\n'; });
+    T.notes.points.forEach(function (p) { out += '[' + stamp(p.start, long) + '] ' + p.text + (p.original ? '\n    ' + p.original : '') + '\n\n'; });
     if (T.notes.topics.length) out += 'Topics: ' + T.notes.topics.join(', ') + '\n';
     return out;
   }
   function saveText(text, ext) {
-    saveOne({ blob: new Blob([text], { type: 'text/plain' }), name: baseName() + (ext === 'notes' ? '_notes.txt' : '_transcript.' + ext) });
+    saveOne({ blob: new Blob([text], { type: 'text/plain' }), name: baseName() + (ext === 'notes' ? '_notes.txt' : ext === 'en.srt' ? '_english.srt' : '_transcript.' + ext) });
   }
   function copyText(text) {
     var done = function () { $('save-note').textContent = 'Copied the transcript. You can paste it into Claude or another assistant to ask for a summary.'; };
@@ -2104,6 +2240,109 @@ audio { width: 100%; display: block; margin-top: 12px; }
     });
   }
 
+  /* ---------- audio files: make them smaller ---------- */
+
+  var AUDIO_EXT = /\.(mp3|wav|m4a|aac|ogg|oga|opus|flac|wma|amr|aiff?|caf|weba)$/i;
+  function isAudioFile(file) {
+    return (file.type && file.type.indexOf('audio/') === 0) || AUDIO_EXT.test(file.name);
+  }
+  function showAudioFile(file) {
+    var ext = (/\.([^.]+)$/.exec(file.name) || [, ''])[1].toUpperCase();
+    S.aud = { file: file, duration: 0 };
+    $('aud').hidden = false;
+    $('aud-name').textContent = file.name;
+    $('aud-size').textContent = fmtSize(file.size);
+    $('aud-fmt').textContent = ext || (file.type || 'audio').replace('audio/', '').toUpperCase();
+    $('aud-dur').textContent = '…';
+    $('aud-err').hidden = true; $('aud-prog').hidden = true;
+    $('aud-go').disabled = !!IN_CLAUDE;
+    if (IN_CLAUDE) audError('Compressing audio files needs the GitHub Pages version of this page: rhhas-knust.github.io/Video-Compressor');
+    var url = URL.createObjectURL(file), el = document.createElement('audio');
+    el.preload = 'metadata';
+    el.onloadedmetadata = function () {
+      if (isFinite(el.duration) && S.aud && S.aud.file === file) { S.aud.duration = el.duration; $('aud-dur').textContent = fmtTime(el.duration); refreshAudioEstimate(); }
+      URL.revokeObjectURL(url);
+    };
+    el.onerror = function () { if (S.aud && S.aud.file === file) $('aud-dur').textContent = 'Unknown'; refreshAudioEstimate(); URL.revokeObjectURL(url); };
+    el.src = url;
+    refreshAudioEstimate();
+  }
+  function refreshAudioEstimate() {
+    var a = S.aud;
+    if (!a) return;
+    if (!a.duration) { $('aud-est').textContent = '–'; return; }
+    var bytes = +$('aud-q').value * 1000 * a.duration / 8;
+    $('aud-est').textContent = '≈ ' + fmtSize(bytes) + (bytes < a.file.size ? ' (−' + Math.round((1 - bytes / a.file.size) * 100) + '%)' : ' (no smaller)');
+  }
+  function audError(msg) { var el = $('aud-err'); el.textContent = msg; el.hidden = !msg; }
+
+  // Runs one ffmpeg.wasm command on a file read straight from disk and returns the output file.
+  function ffmpegConvert(file, makeArgs, outPath, duration, onProgress, job) {
+    var ff = null;
+    return loadFfmpeg(function (p) { onProgress(0.1 * p, 'Downloading the converter (first time only)'); }).then(function (f) {
+      ff = f; job.ff = f;
+      if (job.cancelled) throw new Error('cancelled');
+      ff.on('log', function (e) {
+        var m = /time=(\d+):(\d+):(\d+\.?\d*)/.exec(e.message || '');
+        if (m && duration) onProgress(0.1 + 0.9 * Math.min(1, (+m[1] * 3600 + +m[2] * 60 + +m[3]) / duration), 'Converting');
+      });
+      return ff.createDir('/in');
+    }).then(function () {
+      return ff.mount('WORKERFS', { files: [file] }, '/in');
+    }).then(function () {
+      return ff.exec(makeArgs('/in/' + file.name));
+    }).then(function (code) {
+      if (code !== 0) throw new Error('the converter stopped (code ' + code + ')');
+      return ff.readFile(outPath);
+    }).then(function (data) {
+      ff.terminate(); job.ff = null;
+      return data;
+    }, function (e) {
+      try { if (ff) ff.terminate(); } catch (x) {}
+      job.ff = null;
+      throw e;
+    });
+  }
+
+  function compressAudioFile() {
+    var a = S.aud, kbps = +$('aud-q').value, out = $('aud-out').value, started = performance.now();
+    var job = S.job = { cancelled: false, ff: null, cancel: function () { job.cancelled = true; if (job.ff) { try { job.ff.terminate(); } catch (e) {} } } };
+    $('aud-go').disabled = true; $('aud-cancel').hidden = false; $('aud-prog').hidden = false; audError(''); $('result').hidden = true;
+    function progress(p, label) {
+      var elapsed = (performance.now() - started) / 1000;
+      $('aud-fill').style.width = (p * 100).toFixed(1) + '%';
+      $('aud-pct').textContent = label + ' ' + Math.min(100, Math.floor(p * 100)) + '%';
+      $('aud-eta').textContent = p > 0.12 && elapsed > 3 ? 'about ' + fmtTime(elapsed / p - elapsed) + ' left' : '';
+    }
+    progress(0, 'Preparing');
+    var outPath = '/out.' + out;
+    function args(input) {
+      var x = ['-i', input, '-vn', '-map', '0:a:0'];
+      if (kbps <= 64) x.push('-ac', '1');                       // voice: mono
+      if (kbps <= 32) x.push('-ar', out === 'mp3' ? '22050' : '24000');
+      x = x.concat(out === 'mp3' ? ['-c:a', 'libmp3lame', '-b:a', kbps + 'k'] : ['-c:a', 'aac', '-b:a', kbps + 'k', '-movflags', '+faststart']);
+      x.push(outPath);
+      return x;
+    }
+    ffmpegConvert(a.file, args, outPath, a.duration, progress, job).then(function (data) {
+      S.job = null;
+      $('aud-go').disabled = false; $('aud-cancel').hidden = true; $('aud-prog').hidden = true;
+      var blob = new Blob([data], { type: out === 'mp3' ? 'audio/mpeg' : 'audio/mp4' });
+      var name = (a.file.name.replace(/\.[^.]+$/, '') || 'audio') + '_compressed.' + out;
+      showSingle(blob, name, (performance.now() - started) / 1000, 'audio', a.file.size);
+      $('save').textContent = 'Save compressed audio';
+    }).catch(function (e) {
+      S.job = null;
+      $('aud-go').disabled = false; $('aud-cancel').hidden = true; $('aud-prog').hidden = true;
+      if (job.cancelled) return;
+      console.error(e);
+      var msg = (e && e.message) || String(e);
+      audError(/fetch|network|import|load/i.test(msg)
+        ? 'Couldn’t download the converter (' + msg + '). Check your internet connection and try again; it is only downloaded once.'
+        : 'Compression stopped (' + msg + '). This audio format may not be supported.');
+    });
+  }
+
   /* ---------- real-time mode: MediaRecorder ---------- */
 
   function compressRealtime() {
@@ -2177,11 +2416,12 @@ audio { width: 100%; display: block; margin-top: 12px; }
     $('r-video').hidden = isAudio; $('r-audio').hidden = !isAudio;
     (isAudio ? $('r-audio') : $('r-video')).src = r.url;
   }
-  function showSingle(blob, name, secs, kind) {
+  function showSingle(blob, name, secs, kind, originalBytes) {
     clearResults();
     var r = { blob: blob, name: name, kind: kind };
     S.results = [r];
-    var oldB = kind === 'audio' ? null : S.file.size, newB = blob.size;
+    var oldB = originalBytes !== undefined ? originalBytes : kind === 'audio' ? null : S.file.size, newB = blob.size;
+    var mediaDur = (S.meta && S.meta.duration) || (S.aud && S.aud.duration) || 0;
     $('r-sizes').hidden = false;
     if (oldB) {
       var saved = 1 - newB / oldB;
@@ -2193,10 +2433,12 @@ audio { width: 100%; display: block; margin-top: 12px; }
       $('r-pct').style.color = 'var(--good)';
       $('r-sizes').hidden = true;
     }
-    $('r-time').textContent = name + ' · finished in ' + fmtTime(secs) + (S.meta.duration && secs > 0.5 ? ' (' + (S.meta.duration / secs).toFixed(1) + '× real time).' : '.');
+    $('r-time').textContent = name + ' · finished in ' + fmtTime(secs) + (mediaDur && secs > 0.5 ? ' (' + (mediaDur / secs).toFixed(1) + '× real time).' : '.');
     var w = $('r-warn');
     if (oldB && newB / oldB > 0.98) {
-      w.textContent = 'This video was already compressed about as far as it goes. Keep the original, or try Smallest or a lower resolution.';
+      w.textContent = kind === 'audio'
+        ? 'This audio was already this small or smaller. Keep the original, or choose a lower quality.'
+        : 'This video was already compressed about as far as it goes. Keep the original, or try Smallest or a lower resolution.';
       w.hidden = false;
     } else w.hidden = true;
     $('r-parts').hidden = true;
@@ -2270,7 +2512,10 @@ audio { width: 100%; display: block; margin-top: 12px; }
   ['t-from', 't-to'].forEach(function (id) { $(id).addEventListener('input', refreshEstimates); });
   $('t-copy').addEventListener('click', function () { copyText(transcriptText()); });
   $('t-save-txt').addEventListener('click', function () { saveText(transcriptText(), 'txt'); });
-  $('t-save-srt').addEventListener('click', function () { saveText(srtText(), 'srt'); });
+  $('t-save-srt').addEventListener('click', function () { saveText(srtText(false), 'srt'); });
+  $('t-save-srt-en').addEventListener('click', function () { saveText(srtText(true), 'en.srt'); });
+  $('t-translate').addEventListener('change', refreshEstimates);
+  checkLocalModels();
   $('t-save-notes').addEventListener('click', function () { saveText(notesText(), 'notes'); });
   document.querySelectorAll('input[name=q]').forEach(function (r) { r.addEventListener('change', refreshEstimates); });
   $('go').addEventListener('click', function () {
@@ -2283,6 +2528,9 @@ audio { width: 100%; display: block; margin-top: 12px; }
   $('cam-ext').addEventListener('change', function () { $('cam-go').textContent = 'Convert to ' + $('cam-ext').value.toUpperCase(); });
   $('conv-save').addEventListener('click', function () { if (S.converted) saveOne({ blob: S.converted.file, name: S.converted.file.name }); });
   $('save').addEventListener('click', function () { if (S.results.length > 1) saveAll(); else if (S.results[0]) saveOne(S.results[0]); });
-  $('again').addEventListener('click', function () { $('result').hidden = true; $('tune').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+  $('again').addEventListener('click', function () { $('result').hidden = true; (S.aud ? $('aud') : $('tune')).scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+  $('aud-go').addEventListener('click', function () { if (!S.job && S.aud) compressAudioFile(); });
+  $('aud-cancel').addEventListener('click', function () { if (S.job && S.job.cancel) S.job.cancel(); });
+  ['aud-q', 'aud-out'].forEach(function (id) { $(id).addEventListener('change', refreshAudioEstimate); });
 })();
 </script>

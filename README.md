@@ -33,6 +33,15 @@ Notes: audio is copied untouched when already AAC/MP3/Opus/Vorbis, otherwise
 re-encoded to AAC 128k. Outputs that aren't smaller than the original are
 discarded (override with `--keep-larger`). The original is never modified.
 
+## Training the Twi (Akan) models (Google Colab)
+`training/train_twi_model.ipynb` fine-tunes Whisper base on public Twi/Akan
+speech and Helsinki-NLP's many-to-English translator on Twi–English sentence
+pairs, reports word error rate and BLEU before and after, exports both to int8
+ONNX for transformers.js (`training/twi_model.py`, packages pinned in
+`training/requirements-twi.txt`), and pushes them to a `twi-models` branch.
+Once merged, Transcribe & notes offers **Twi (Akan)** with an optional English
+line under each Twi line; the important points are then picked from the English.
+
 ## Installing as an app / Microsoft Store
 The web version is an installable PWA (manifest, icons and a network-first
 service worker in `web/`). In Edge or Chrome use **Install app**; for the
@@ -86,6 +95,8 @@ High / Balanced / Smallest and save the result. Nothing is uploaded.
   interlaced field pairs), and the Dolby AC-3/MPEG/PCM sound is converted to
   stereo AAC with ffmpeg.wasm (about 32 MB, loaded once). The converted file then
   works with every tool; Compress can also remove interlacing lines.
+- **Audio files** (MP3, WAV, M4A, FLAC, OGG, WMA…): made smaller as MP3 or
+  M4A/AAC at 192, 128, 64 (mono, voice) or 32 kbps, with ffmpeg.wasm.
 - **Real-time mode** (other formats, e.g. MKV): plays the video through once
   with MediaRecorder, so it takes as long as the video. Only compression is
   available in this mode.
