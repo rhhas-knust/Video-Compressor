@@ -1,5 +1,5 @@
 # Twi models: training and export, pinned to the set tested with transformers.js 4.3.
-# Colab's own torch is used (the export code switches recent torch to its classic ONNX exporter).
+# Works on Python 3.12 and 3.13 (Colab). Colab's own torch is used (the export code switches recent torch to its classic ONNX exporter).
 transformers==4.49.0
 optimum[exporters]==1.25.3
 onnx==1.18.0
@@ -8,6 +8,6 @@ datasets==3.6.0
 accelerate==1.6.0
 jiwer==3.1.0
 sacrebleu==2.5.1
-sentencepiece==0.2.0
+sentencepiece==0.2.1
 soundfile
-librosa
+librosa<1.0
