@@ -3,7 +3,7 @@
 // is used only when offline. Only this site's own files are handled: videos are
 // read straight from disk, and the speech model's downloads (jsDelivr, Hugging
 // Face) keep the browser's normal caching.
-const CACHE = 'video-compressor-v2';
+const CACHE = 'video-compressor-v3';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'mts.js', 'vendor/mp4box.all.min.js', 'vendor/mp4-muxer.js', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {

@@ -68,10 +68,12 @@ High / Balanced / Smallest and save the result. Nothing is uploaded.
 
 - **Fast mode** (MP4/MOV): reads the file directly with WebCodecs and re-encodes
   the picture with the device's encoder, usually several times faster than
-  playback. Audio is copied unchanged. "Smallest file" uses H.265 or AV1 when
-  available; AV1 shrinks already-compressed videos that H.264 cannot.
-  "Plays everywhere" uses H.264. If the output is on course to be no smaller
-  than the original, it stops early and says so.
+  playback. Audio is copied unchanged. The default format, "Every phone",
+  uses H.264 so the result opens on any phone, including in this app on a
+  phone. "Smaller (newer devices)" uses H.265 or AV1 when available; AV1
+  shrinks already-compressed videos that H.264 cannot, but some phones can't
+  open those files. If the output is on course to be no smaller than the
+  original, it stops early and says so.
 - **Audio**: when compressing, keep the original audio or re-encode it smaller
   (96 or 64 kbps). AAC is used where Chrome can encode it, Opus otherwise.
 - **Extract audio**: save the soundtrack as `.m4a`. "Original" copies the AAC
