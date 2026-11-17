@@ -1,7 +1,7 @@
 {
   "id": "./",
-  "name": "Video Compressor",
-  "short_name": "Video Compressor",
+  "name": "ClipShrink",
+  "short_name": "ClipShrink",
   "description": "Compress videos, extract their audio, split long videos into parts for TikTok and YouTube Shorts, and transcribe speech with the important points picked out. Everything runs on your device; videos are never uploaded.",
   "start_url": "./",
   "scope": "./",

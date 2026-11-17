@@ -1,4 +1,4 @@
-# Video Compressor
+# ClipShrink
 
 A command-line tool that shrinks video files while keeping them looking the same.
 It wraps [ffmpeg](https://ffmpeg.org) and uses constant-quality (CRF) encoding, so

@@ -48,7 +48,17 @@ three business days; Partner Center emails you the result.
 ## Updating later
 Changes merged to `main` reach users automatically (the app loads the site).
 Only rebuild in PWABuilder and resubmit, with a higher version number, when the
-name, icons or manifest change.
+name, icons or manifest change. (The manifest name changed to ClipShrink on
+17 Nov 2026: see "Renaming the installed app" below.)
+
+## Renaming the installed app
+The installed app's name comes from the package, not just the website, so a
+name change needs a new package:
+1. PWABuilder: enter the site URL again, **Package for stores → Windows**.
+2. Use the same Package ID, Publisher ID and Publisher display name as before,
+   the app name **ClipShrink**, and a higher version (e.g. `1.0.1`).
+3. Partner Center: open the app, **Update** the submission, replace the
+   packages under **Packages**, and submit. Nothing else needs to change.
 
 ---
 
@@ -63,7 +73,7 @@ into Shorts and TikTok parts, and get a transcript with the key points. All on
 your device.
 
 **Description**
-Video Compressor makes large video files smaller while keeping them looking the
+ClipShrink makes large video files smaller while keeping them looking the
 same, and helps you reuse long videos for social media. Everything happens on
 your own computer: your videos are never uploaded.
 
